@@ -460,12 +460,78 @@ $$('.examples button').forEach(button => button.addEventListener('click', () => 
   $('#problem-input').focus();
 }));
 
+let diagnosisCategory = null;
+
+function fillList(selector, items) {
+  const list = $(selector);
+  list.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.textContent = item;
+    list.appendChild(li);
+  });
+}
+
+function renderDiagnosisResult(diagnosis) {
+  $('#follow-up').classList.add('hidden');
+  $('#choices').innerHTML = '';
+  $('#result-title').textContent = diagnosis.title;
+  $('#result-explanation').textContent = diagnosis.explanation;
+  fillList('#result-parts', diagnosis.parts);
+  fillList('#result-checks', diagnosis.checks);
+  $('#result-action').textContent = diagnosis.action;
+  $('#result-urgency').textContent = diagnosis.urgency;
+  $('#result .garage-note p').textContent = `“${diagnosis.garageQuestion}”`;
+  $('#result-safety').textContent = `Guidance only—not a confirmed diagnosis. ${diagnosis.safety}`;
+  $('#result').classList.remove('hidden');
+}
+
+async function requestDiagnosis(answer) {
+  const problem = $('#user-message').textContent;
+  const choices = $('#choices');
+  choices.innerHTML = '<span class="diagnosis-loading">Checking...</span>';
+  try {
+    const response = await fetch('/api/diagnose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        problem,
+        answer,
+        category: diagnosisCategory,
+        year: selectedVehicle?.year,
+        make: selectedVehicle?.make,
+        model: selectedVehicle?.model
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not assess this symptom.');
+    diagnosisCategory = data.category;
+    if (data.stage === 'result') return renderDiagnosisResult(data.diagnosis);
+    $('#assistant-question').textContent = data.question;
+    choices.innerHTML = '';
+    data.choices.forEach(choice => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = choice.label;
+      button.addEventListener('click', () => requestDiagnosis(choice.id));
+      choices.appendChild(button);
+    });
+  } catch (error) {
+    $('#assistant-question').textContent = error.message;
+    choices.innerHTML = '';
+  }
+}
+
 function startDiagnosis() {
   const text = $('#problem-input').value.trim();
   if (!text) { $('#problem-input').focus(); return; }
+  diagnosisCategory = null;
   $('#user-message').textContent = text;
+  $('#follow-up').classList.remove('hidden');
+  $('#result').classList.add('hidden');
   $('#diagnosis-intro').classList.add('hidden');
   $('#chat-panel').classList.remove('hidden');
+  requestDiagnosis();
 }
 
 $('#start-diagnosis').addEventListener('click', startDiagnosis);
@@ -473,16 +539,62 @@ $('#problem-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startDiagnosis(); }
 });
 
-$$('#choices button').forEach(button => button.addEventListener('click', () => {
-  $('#choices').innerHTML = `<div class="message user">${button.textContent}</div>`;
-  setTimeout(() => $('#result').classList.remove('hidden'), 260);
-}));
+$('#restart-diagnosis').addEventListener('click', () => {
+  diagnosisCategory = null;
+  $('#problem-input').value = '';
+  $('#chat-panel').classList.add('hidden');
+  $('#diagnosis-intro').classList.remove('hidden');
+  $('#result').classList.add('hidden');
+  $('#problem-input').focus();
+});
 
 const authStore = {
   token: localStorage.getItem('auto_lookup_access_token'),
+  refreshToken: localStorage.getItem('auto_lookup_refresh_token'),
   config: null,
   user: null
 };
+
+function saveSession(data) {
+  if (!data?.access_token) return false;
+  authStore.token = data.access_token;
+  localStorage.setItem('auto_lookup_access_token', data.access_token);
+  if (data.refresh_token) {
+    authStore.refreshToken = data.refresh_token;
+    localStorage.setItem('auto_lookup_refresh_token', data.refresh_token);
+  }
+  return true;
+}
+
+function clearSession() {
+  authStore.token = null;
+  authStore.refreshToken = null;
+  localStorage.removeItem('auto_lookup_access_token');
+  localStorage.removeItem('auto_lookup_refresh_token');
+}
+
+function captureAuthCallback() {
+  const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const error = params.get('error_description');
+  if (!params.has('access_token') && !error) return false;
+  if (params.has('access_token')) saveSession({ access_token: params.get('access_token'), refresh_token: params.get('refresh_token') });
+  history.replaceState({}, document.title, `${location.pathname}${location.search}`);
+  showOnly('#profile-view');
+  const status = $('#auth-status');
+  if (status) status.textContent = error ? decodeURIComponent(error.replace(/\+/g, ' ')) : 'Email confirmed. You are signed in.';
+  return true;
+}
+
+async function refreshSession() {
+  if (!authStore.refreshToken || !authStore.config) return false;
+  const response = await fetch(`${authStore.config.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: { apikey: authStore.config.supabaseAnonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: authStore.refreshToken })
+  });
+  if (!response.ok) return false;
+  return saveSession(await response.json());
+}
 
 function showOnly(view) {
   ['#search-view', '#car-view', '#profile-view'].forEach(selector => $(selector).classList.add('hidden'));
@@ -509,9 +621,11 @@ async function loadProfile() {
     const userResponse = await fetch(`${authStore.config.supabaseUrl}/auth/v1/user`, {
       headers: { apikey: authStore.config.supabaseAnonKey, Authorization: `Bearer ${authStore.token}` }
     });
+    if (!userResponse.ok && await refreshSession()) {
+      return loadProfile();
+    }
     if (!userResponse.ok) {
-      localStorage.removeItem('auto_lookup_access_token');
-      authStore.token = null;
+      clearSession();
       return renderSignedOut();
     }
     authStore.user = await userResponse.json();
@@ -534,7 +648,10 @@ async function authRequest(action) {
   const status = $('#auth-status');
   if (!email || password.length < 8) return;
   status.textContent = 'Please wait...';
-  const response = await fetch(`${authStore.config.supabaseUrl}/auth/v1/${action}`, {
+  const endpoint = action === 'signup'
+    ? `${authStore.config.supabaseUrl}/auth/v1/signup?redirect_to=${encodeURIComponent(`${location.origin}/`)}`
+    : `${authStore.config.supabaseUrl}/auth/v1/${action}`;
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { apikey: authStore.config.supabaseAnonKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
@@ -542,8 +659,7 @@ async function authRequest(action) {
   const data = await response.json();
   if (!response.ok) { status.textContent = data.msg || data.error_description || 'Could not continue'; return; }
   if (!data.access_token) { status.textContent = 'Check your email to confirm the account.'; return; }
-  authStore.token = data.access_token;
-  localStorage.setItem('auto_lookup_access_token', data.access_token);
+  saveSession(data);
   status.textContent = '';
   await loadProfile();
 }
@@ -561,9 +677,14 @@ $('#profile-btn').addEventListener('click', async () => { showOnly('#profile-vie
 $('#profile-back').addEventListener('click', () => showOnly(selectedVehicle ? '#car-view' : '#search-view'));
 $('#auth-form').addEventListener('submit', event => { event.preventDefault(); authRequest('token?grant_type=password'); });
 $('#sign-up').addEventListener('click', () => authRequest('signup'));
-$('#sign-out').addEventListener('click', () => {
-  localStorage.removeItem('auto_lookup_access_token');
-  authStore.token = null;
+$('#sign-out').addEventListener('click', async () => {
+  if (authStore.config && authStore.token) {
+    await fetch(`${authStore.config.supabaseUrl}/auth/v1/logout?scope=global`, {
+      method: 'POST',
+      headers: { apikey: authStore.config.supabaseAnonKey, Authorization: `Bearer ${authStore.token}` }
+    }).catch(() => {});
+  }
+  clearSession();
   renderSignedOut();
 });
 $('#provider-form').addEventListener('submit', async event => {
@@ -588,3 +709,5 @@ $('#remove-provider').addEventListener('click', async () => {
   $('#provider-status').textContent = 'Connection removed.';
   await loadProviders();
 });
+
+if (captureAuthCallback()) loadProfile();

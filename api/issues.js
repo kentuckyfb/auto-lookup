@@ -2,6 +2,13 @@ const { json, currentUser, getProviderKey, readCache, writeCache } = require('./
 
 const value = input => String(input || '').trim();
 const slug = input => value(input).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+const identity = input => value(input).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+function providerMatches(requestedMake, requestedModel, data) {
+  const providerMake = data?.model?.makeEn || data?.model?.make || '';
+  const providerModel = data?.model?.modelEn || data?.model?.model || '';
+  return identity(providerMake) === identity(requestedMake) && identity(providerModel) === identity(requestedModel);
+}
 
 async function nhtsa(kind, year, make, model) {
   const url = new URL(`https://api.nhtsa.gov/${kind}/${kind}ByVehicle`);
@@ -80,8 +87,11 @@ async function japanModelRecords(year, make, model) {
   if (!recallResponse.ok && !complaintResponse.ok) return { recalls: [], patterns: [], sourceUrl: null };
   const recallData = recallResponse.ok ? await recallResponse.json() : {};
   const complaintData = complaintResponse.ok ? await complaintResponse.json() : {};
+  const recallMatch = providerMatches(make, model, recallData);
+  const complaintMatch = providerMatches(make, model, complaintData);
   const selectedYear = Number(year);
-  const recalls = (recallData.recalls || [])
+  const recalls = (recallMatch ? recallData.recalls : []) || [];
+  const filteredRecalls = recalls
     .filter(item => Math.abs(Number(String(item.date || '').slice(0, 4)) - selectedYear) <= 5)
     .sort((a, b) => Math.abs(Number(String(a.date).slice(0, 4)) - selectedYear) - Math.abs(Number(String(b.date).slice(0, 4)) - selectedYear))
     .slice(0, 5)
@@ -102,7 +112,7 @@ async function japanModelRecords(year, make, model) {
       SourceUrl: item.officialPdf || recallData.cite?.url || null
     };
     });
-  const patterns = (complaintData.complaints?.byDevice || []).slice(0, 6).map(item => {
+  const patterns = (complaintMatch ? (complaintData.complaints?.byDevice || []) : []).slice(0, 6).map(item => {
     const component = englishDevice(item.device);
     const guidance = guidanceFor(component);
     return {
@@ -119,10 +129,10 @@ async function japanModelRecords(year, make, model) {
   };
   });
   return {
-    recalls,
+    recalls: filteredRecalls,
     patterns,
-    sourceUrl: recallData.cite?.url || complaintData.cite?.url || 'https://renrakuda.mlit.go.jp/',
-    verifiedDate: recallData.verifiedDate || complaintData.verifiedDate || null
+    sourceUrl: (recallMatch && recallData.cite?.url) || (complaintMatch && complaintData.cite?.url) || 'https://renrakuda.mlit.go.jp/',
+    verifiedDate: (recallMatch && recallData.verifiedDate) || (complaintMatch && complaintData.verifiedDate) || null
   };
 }
 
@@ -132,7 +142,7 @@ module.exports = async function handler(req, res) {
   const make = value(req.query.make);
   const model = value(req.query.model);
   if (!/^\d{4}$/.test(year) || !make || !model) return json(res, 400, { error: 'year, make and model are required' });
-  const cacheKey = `issues:v3:${year}:${slug(make)}:${slug(model)}`;
+  const cacheKey = `issues:v4:${year}:${slug(make)}:${slug(model)}`;
   try {
     const cached = await readCache(cacheKey);
     if (cached) return json(res, 200, { ...cached.payload, cache: 'hit' });

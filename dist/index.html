@@ -83,16 +83,21 @@
             </div>
 
             <div class="chat hidden" id="chat-panel">
-              <div class="chat-status"><div><strong>Guided check</strong></div></div>
-              <div class="message user" id="user-message"></div>
-              <div class="message assistant"><strong>A few quick checks will help.</strong><p>When do you notice it most?</p></div>
-              <div class="choices" id="choices"><button>While braking</button><button>While accelerating</button><button>At idle</button><button>It varies</button></div>
+              <div class="diagnosis-topline"><span>Guided check</span><button id="restart-diagnosis" type="button">Start over</button></div>
+              <div class="symptom-summary"><span>You noticed</span><strong id="user-message"></strong></div>
+              <div class="follow-up" id="follow-up"><span>One useful question</span><h3 id="assistant-question">Checking your symptom...</h3></div>
+              <div class="choices" id="choices"></div>
               <div class="result hidden" id="result">
-                <div class="confidence"><span>Most likely</span><strong>Brake pad wear</strong><em>78% match</em></div>
-                <p>The description fits brake pads approaching their wear limit. The rotors may still be reusable if there is no vibration.</p>
-                <div class="result-grid"><div><span>Likely part</span><strong>Front brake pads</strong></div><div><span>Typical action</span><strong>Inspect, then replace</strong></div><div><span>Urgency</span><strong class="amber">Check this week</strong></div></div>
+                <span class="result-label">Most likely area</span>
+                <h3 id="result-title"></h3>
+                <p id="result-explanation"></p>
+                <div class="diagnosis-columns">
+                  <section><span>Affected parts</span><ul id="result-parts"></ul></section>
+                  <section><span>Check first</span><ul id="result-checks"></ul></section>
+                </div>
+                <div class="action-row"><div><span>Typical action</span><strong id="result-action"></strong></div><div><span>Urgency</span><strong id="result-urgency"></strong></div></div>
                 <div class="garage-note"><strong>What to ask the garage</strong><p>“Can you show me the remaining pad thickness and rotor measurement before replacing anything?”</p></div>
-                <small class="disclaimer">This is guidance, not a certified mechanical inspection. Stop driving if braking feels unsafe.</small>
+                <small class="disclaimer" id="result-safety"></small>
               </div>
             </div>
           </div>

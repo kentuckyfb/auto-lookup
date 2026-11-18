@@ -22,7 +22,13 @@ Exact year/make/model lookups reuse the database record until its expiry time. V
    - `CARSXE_API_KEY`
    - `CREDENTIAL_ENCRYPTION_KEY` — a random value of at least 32 characters
 5. Confirm the Supabase integration added `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`.
-6. Redeploy.
+6. In Supabase, open **Authentication → URL Configuration**:
+   - Set **Site URL** to the production Vercel URL, for example `https://auto-lookup.vercel.app`.
+   - Add that same production URL to **Redirect URLs**.
+   - For Vercel previews, optionally add `https://*-kentuckyfb.vercel.app/**`.
+7. Redeploy.
+
+The browser handles Supabase's confirmation fragment, stores the session, removes the tokens from the visible URL, and opens the signed-in profile. New signups explicitly request the current site origin as their confirmation destination, so that origin must be in Supabase's redirect allow list.
 
 User-provided CarsXE keys are verified once, encrypted with AES-256-GCM, and stored in `provider_connections`. Only their last four characters are returned to the browser.
 
