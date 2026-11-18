@@ -229,8 +229,13 @@ function buildIssue({ title, category, badge, sections }) {
     const block = document.createElement('div');
     const label = document.createElement('span');
     label.textContent = section.label;
-    const copy = document.createElement('p');
+    const copy = document.createElement(section.url ? 'a' : 'p');
     copy.textContent = section.text;
+    if (section.url) {
+      copy.href = section.url;
+      copy.target = '_blank';
+      copy.rel = 'noopener';
+    }
     block.append(label, copy);
     detail.appendChild(block);
   });
@@ -286,6 +291,10 @@ async function loadKnownIssues(vehicle) {
     source.href = 'https://www.nhtsa.gov/nhtsa-datasets-and-apis';
     source.textContent = 'US public safety data · NHTSA ↗';
   }
+  if (records.sources?.includes('Japan MLIT')) {
+    source.href = records.sourceUrl || 'https://renrakuda.mlit.go.jp/';
+    source.textContent = 'Official records · Japan MLIT + NHTSA ↗';
+  }
 
   const recallIssues = records.recalls.slice(0, 4).map(recall => ({
     title: `Recall · ${pretty(recall.Component || recall.component)}`,
@@ -293,7 +302,8 @@ async function loadKnownIssues(vehicle) {
     badge: 'official',
     sections: [
       { label: 'Risk', text: clip(recall.Consequence || recall.consequence || recall.Summary || recall.summary || 'See the official recall record.') },
-      { label: 'Remedy', text: clip(recall.Remedy || recall.remedy || 'Contact an authorised dealer with the campaign number.') }
+      { label: 'Remedy', text: clip(recall.Remedy || recall.remedy || 'Contact an authorised dealer with the campaign number.') },
+      ...(recall.SourceUrl ? [{ label: 'Official notice', text: 'Open campaign filing ↗', url: recall.SourceUrl }] : [])
     ]
   }));
 
@@ -315,7 +325,17 @@ async function loadKnownIssues(vehicle) {
       ]
     }));
 
-  const items = [...recallIssues, ...complaintIssues];
+  const modelPatterns = (records.patterns || []).slice(0, 6).map(pattern => ({
+    title: pattern.title,
+    category: pattern.category,
+    badge: `${pattern.count} reports`,
+    sections: [
+      { label: 'Pattern', text: pattern.summary },
+      { label: 'Next step', text: 'Use this only as a reason to inspect the system—not as proof that a part needs replacement.' }
+    ]
+  }));
+
+  const items = [...recallIssues, ...complaintIssues, ...modelPatterns];
   list.innerHTML = '';
   if (!records.reached) {
     list.innerHTML = '<div class="issues-state">Public safety data is temporarily unavailable.</div>';

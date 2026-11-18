@@ -111,6 +111,7 @@
 .issue-detail{display:grid;grid-template-columns:1fr 2fr;gap:22px;padding:0 28px 18px 2px;animation:fade .2s ease}
 .issue-detail span{display:block;color:#7f8b86;font-size:9px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
 .issue-detail p{font-size:12px;line-height:1.5;margin:0;color:#46534f}
+.issue-detail a{font-size:12px;line-height:1.5;color:var(--green);text-decoration:none}.issue-detail a:hover{text-decoration:underline}
 .issues-state{padding:34px 0;color:#74817c;font-size:12px;line-height:1.5}
 .issues-state.loading{opacity:.65}
 .issues-source{display:inline-block;margin-top:14px;color:#78857f;font-size:9px;text-decoration:none}

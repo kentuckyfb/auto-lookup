@@ -2,6 +2,8 @@
 
 A minimal vehicle lookup and guided-diagnosis interface. Auto Lookup combines free NHTSA data with CarsXE specifications, licensed image references, recalls, and user-supplied provider keys.
 
+Known-issue coverage also includes Japan MLIT recall filings and owner defect-report summaries through Data Butler's no-auth verified-data API. These model-line records link back to the official filing and must be checked against the vehicle's chassis number before treating a recall as applicable.
+
 ## Cache-first request flow
 
 1. Read the normalized record from Supabase.
