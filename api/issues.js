@@ -38,7 +38,37 @@ const jpDeviceNames = {
   'コンピュータ': 'Control module', '(ファン)ベルト': 'Auxiliary belt', '配線': 'Wiring'
 };
 
-const englishDevice = name => jpDeviceNames[name] || name || 'Vehicle system';
+const englishDevice = name => {
+  if (jpDeviceNames[name]) return jpDeviceNames[name];
+  const raw = String(name || '');
+  if (raw.startsWith('\u305d\u306e\u4ed6')) return raw.includes('\u30a8\u30f3\u30b8\u30f3') ? 'Engine' : 'Other systems';
+  return raw || 'Vehicle system';
+};
+
+Object.assign(jpDeviceNames, {
+  '\u305d\u306e\u4ed6(\u30a8\u30f3\u30b8\u30f3)': 'Engine',
+  '\u30b9\u30d7\u30ea\u30f3\u30b0/\u30a8\u30a2\u30b5\u30b9': 'Suspension springs / air suspension',
+  '\u305d\u306e\u4ed6': 'Other systems',
+  '\u30d6\u30ec\u30fc\u30ad': 'Brakes',
+  '\u30b9\u30c6\u30a2\u30ea\u30f3\u30b0': 'Steering'
+});
+
+function guidanceFor(component) {
+  const name = String(component || '').toLowerCase();
+  if (name.includes('fuel hose') || name.includes('fuel pipe')) return { parts: 'Fuel-vapour hose, vent pipe and pressure-control valve', problem: 'A restricted or defective vent can distort tank pressure and make the fuel reading unreliable.', symptoms: 'Incorrect fuel gauge, fuel smell, stalling or unexpected fuel exhaustion.', action: 'Inspect the venting circuit and replace the campaign-listed hose or valve parts if the chassis is eligible.' };
+  if (name.includes('fuel tank') || name.includes('fuel system')) return { parts: 'Fuel tank, pump seal, hoses and vapour-control components', problem: 'A seal, tank moulding or vapour-control fault may allow leakage or incorrect tank pressure.', symptoms: 'Fuel smell, visible leakage, inaccurate gauge or stalling.', action: 'Pressure-test and inspect the tank and seals; replace only the confirmed defective or recalled part.' };
+  if (name.includes('engine')) return { parts: 'Engine control, crank pulley/bolt and related sensors', problem: 'A fastening, sensor or control fault may interrupt correct engine timing or operation.', symptoms: 'Warning light, rough running, loss of power, stalling or failure to restart.', action: 'Scan fault codes, inspect the listed engine components and verify the campaign number before replacement.' };
+  if (name.includes('transmission') || name.includes('driveline')) return { parts: 'Transmission actuator, oil-pump motor and driveline components', problem: 'Wear or an actuator fault may prevent a gear change or power transfer.', symptoms: 'Gear warning, delayed engagement, abnormal noise or inability to move.', action: 'Check diagnostic codes, actuator operation and fluid condition before deciding whether repair or replacement is required.' };
+  if (name.includes('driveshaft')) return { parts: 'Driveshaft, hub nut, CV joint and dust boot', problem: 'A loose fastener or damaged boot can create play, grease loss and eventual driveline failure.', symptoms: 'Clicking, vibration, grease around the wheel or excessive hub play.', action: 'Inspect torque, joint play and boot condition; replace only damaged or campaign-listed parts.' };
+  if (name.includes('airbag') || name.includes('occupant')) return { parts: 'Airbag controller, inflator, curtain bag and seat-belt pretensioner', problem: 'A controller or airbag assembly fault may prevent correct deployment in a collision.', symptoms: 'Airbag warning light; often no other driving symptom.', action: 'Treat as safety-critical and have the campaign checked by an authorised dealer.' };
+  if (name.includes('brake')) return { parts: 'Brake actuator, hydraulic circuit, pads, discs and sensors', problem: 'Hydraulic, actuator or wear-related faults can reduce braking performance.', symptoms: 'Warning light, noise, vibration, soft pedal or increased stopping distance.', action: 'Measure and inspect the braking system before replacing parts; stop driving if braking feels unsafe.' };
+  if (name.includes('steering')) return { parts: 'Steering gear, joints and mounting hardware', problem: 'Wear, looseness or an assembly defect can affect steering response.', symptoms: 'Play, knocking, heavy steering or the car wandering.', action: 'Inspect steering play and mounting torque immediately; replace the confirmed worn or recalled component.' };
+  if (name.includes('suspension')) return { parts: 'Springs, struts, arms, bushes and mounting hardware', problem: 'Wear, corrosion or loose mounting hardware can affect wheel control.', symptoms: 'Clunks, uneven ride height, vibration or unstable handling.', action: 'Inspect both sides for play, corrosion and damage before replacing paired wear components.' };
+  if (name.includes('lighting')) return { parts: 'Headlamps, rear lamps, switches, wiring and control modules', problem: 'A lamp, wiring or control fault may cause intermittent or failed safety lighting.', symptoms: 'Warning message, flickering or one or more lamps not working.', action: 'Test power, ground, connectors and the lamp assembly before replacing a module.' };
+  if (name.includes('electrical') || name.includes('control module') || name.includes('wiring')) return { parts: 'Wiring, connectors, battery/charging circuit and control modules', problem: 'Connection, moisture or module faults can cause intermittent electrical operation.', symptoms: 'Warning lights, no-start, battery drain or accessories restarting.', action: 'Test battery and charging voltage, then inspect connectors and scan modules before replacement.' };
+  if (name.includes('body') || name.includes('chassis')) return { parts: 'Body structure, latches, mounts and corrosion-prone areas', problem: 'Corrosion, looseness or a latch defect may affect structural or closure security.', symptoms: 'Rattles, difficult closure, visible corrosion or unusual movement.', action: 'Inspect the named body area and mounting points; repair corrosion or replace the confirmed failed part.' };
+  return { parts: component || 'Related vehicle components', problem: 'The reports point to a possible fault in this system, but do not identify one confirmed part.', symptoms: 'Symptoms vary by the exact component and vehicle configuration.', action: 'Inspect and test the system before approving replacement parts.' };
+}
 
 async function japanModelRecords(year, make, model) {
   const base = 'https://databutler.dev/api/vehicles/jp';
@@ -55,21 +85,39 @@ async function japanModelRecords(year, make, model) {
     .filter(item => Math.abs(Number(String(item.date || '').slice(0, 4)) - selectedYear) <= 5)
     .sort((a, b) => Math.abs(Number(String(a.date).slice(0, 4)) - selectedYear) - Math.abs(Number(String(b.date).slice(0, 4)) - selectedYear))
     .slice(0, 5)
-    .map(item => ({
-      Component: englishDevice(item.device),
+    .map(item => {
+      const component = englishDevice(item.device);
+      const guidance = guidanceFor(component);
+      return {
+      Component: component,
       NHTSACampaignNumber: `JP ${item.notificationNo}`,
       Summary: `Official Japan MLIT campaign filed ${item.date}. This is a model-line match; verify the chassis number before assuming this vehicle is affected.`,
-      Consequence: `The campaign concerns the ${englishDevice(item.device).toLowerCase()}. Ask an authorised dealer to check campaign ${item.notificationNo} against the chassis number.`,
-      Remedy: 'If the chassis is included, follow the inspection or replacement action in the official campaign notice.',
+      Consequence: guidance.problem,
+      Remedy: guidance.action,
+      AffectedParts: guidance.parts,
+      Symptoms: guidance.symptoms,
+      OriginalSituation: item.situation || null,
+      OriginalRemedy: item.measures || null,
+      OriginalComponent: item.device || null,
       SourceUrl: item.officialPdf || recallData.cite?.url || null
-    }));
-  const patterns = (complaintData.complaints?.byDevice || []).slice(0, 6).map(item => ({
-    title: `${englishDevice(item.device)} reports`,
+    };
+    });
+  const patterns = (complaintData.complaints?.byDevice || []).slice(0, 6).map(item => {
+    const component = englishDevice(item.device);
+    const guidance = guidanceFor(component);
+    return {
+    title: `${component} reports`,
     category: 'Japan owner reports',
     count: item.count,
     share: item.share,
-    summary: `${item.count} of ${complaintData.complaints.sampledForBreakdown || complaintData.complaints.total} sampled Alto reports involved this system (${item.share}%). Reports are not confirmed defects and are not adjusted for sales volume.`
-  }));
+    summary: `${item.count} of ${complaintData.complaints.sampledForBreakdown || complaintData.complaints.total} sampled ${model} reports involved this system (${item.share}%). Reports are not confirmed defects and are not adjusted for sales volume.`,
+    affectedParts: guidance.parts,
+    possibleProblem: guidance.problem,
+    symptoms: guidance.symptoms,
+    typicalAction: guidance.action,
+    originalComponent: item.device || null
+  };
+  });
   return {
     recalls,
     patterns,
@@ -84,7 +132,7 @@ module.exports = async function handler(req, res) {
   const make = value(req.query.make);
   const model = value(req.query.model);
   if (!/^\d{4}$/.test(year) || !make || !model) return json(res, 400, { error: 'year, make and model are required' });
-  const cacheKey = `issues:v2:${year}:${slug(make)}:${slug(model)}`;
+  const cacheKey = `issues:v3:${year}:${slug(make)}:${slug(model)}`;
   try {
     const cached = await readCache(cacheKey);
     if (cached) return json(res, 200, { ...cached.payload, cache: 'hit' });

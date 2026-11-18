@@ -204,9 +204,9 @@ const nhtsaAliases = { 'Corvette Stingray': 'Corvette', 'Cooper 3-Door': 'Cooper
 const pretty = value => String(value || 'Vehicle').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const clip = (value, length = 360) => String(value || '').length > length ? `${String(value).slice(0, length).trim()}…` : String(value || '');
 
-function buildIssue({ title, category, badge, sections }) {
+function buildIssue({ title, category, badge, preview, kind = 'report', sections }) {
   const item = document.createElement('div');
-  item.className = 'issue-item';
+  item.className = `issue-item issue-${kind}`;
   const button = document.createElement('button');
   button.className = 'issue';
   button.type = 'button';
@@ -215,18 +215,33 @@ function buildIssue({ title, category, badge, sections }) {
   const strong = document.createElement('strong');
   strong.textContent = title;
   const meta = document.createElement('p');
-  meta.textContent = badge ? `${category} · ${badge}` : category;
+  meta.textContent = category;
   heading.append(strong, meta);
+  if (preview) {
+    const previewCopy = document.createElement('small');
+    previewCopy.textContent = preview;
+    heading.appendChild(previewCopy);
+  }
+  const tail = document.createElement('span');
+  tail.className = 'issue-tail';
+  if (badge) {
+    const tag = document.createElement('em');
+    tag.className = 'issue-tag';
+    tag.textContent = badge;
+    tail.appendChild(tag);
+  }
   const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   arrow.setAttribute('viewBox', '0 0 24 24');
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', 'm9 6 6 6-6 6');
   arrow.appendChild(path);
-  button.append(heading, arrow);
+  tail.appendChild(arrow);
+  button.append(heading, tail);
   const detail = document.createElement('div');
   detail.className = 'issue-detail hidden';
   sections.forEach(section => {
     const block = document.createElement('div');
+    if (section.language) block.className = `issue-language issue-language-${section.language}`;
     const label = document.createElement('span');
     label.textContent = section.label;
     const copy = document.createElement(section.url ? 'a' : 'p');
@@ -297,12 +312,19 @@ async function loadKnownIssues(vehicle) {
   }
 
   const recallIssues = records.recalls.slice(0, 4).map(recall => ({
-    title: `Recall · ${pretty(recall.Component || recall.component)}`,
-    category: recall.NHTSACampaignNumber || recall.nhtsaCampaignNumber || 'Official recall',
-    badge: 'official',
+    title: pretty(recall.Component || recall.component),
+    category: `${recall.NHTSACampaignNumber || recall.nhtsaCampaignNumber || 'Official recall'} · Official campaign`,
+    badge: 'Recall',
+    kind: 'recall',
+    preview: clip(recall.AffectedParts || recall.Component || recall.component || 'Vehicle system', 90),
     sections: [
-      { label: 'Risk', text: clip(recall.Consequence || recall.consequence || recall.Summary || recall.summary || 'See the official recall record.') },
-      { label: 'Remedy', text: clip(recall.Remedy || recall.remedy || 'Contact an authorised dealer with the campaign number.') },
+      { label: 'Affected parts', text: clip(recall.AffectedParts || recall.Component || recall.component || 'See the campaign record.', 260), language: 'english' },
+      { label: 'What could happen', text: clip(recall.Consequence || recall.consequence || recall.Summary || recall.summary || 'See the official recall record.'), language: 'english' },
+      ...(recall.Symptoms ? [{ label: 'What you may notice', text: recall.Symptoms, language: 'english' }] : []),
+      { label: 'Usual action', text: clip(recall.Remedy || recall.remedy || 'Contact an authorised dealer with the campaign number.'), language: 'english' },
+      ...(recall.OriginalSituation ? [{ label: '不具合の内容', text: recall.OriginalSituation, language: 'original' }] : []),
+      ...(recall.OriginalRemedy ? [{ label: '改善の内容', text: recall.OriginalRemedy, language: 'original' }] : []),
+      { label: 'Eligibility', text: 'This is a model-line match. Confirm the campaign against the chassis or VIN before approving any repair.' },
       ...(recall.SourceUrl ? [{ label: 'Official notice', text: 'Open campaign filing ↗', url: recall.SourceUrl }] : [])
     ]
   }));
@@ -319,6 +341,8 @@ async function loadKnownIssues(vehicle) {
       title: pretty(group.component),
       category: 'Owner reports',
       badge: `${group.reports.length} reports`,
+      kind: 'report',
+      preview: `${pretty(group.component)} system`,
       sections: [
         { label: 'Pattern', text: clip(group.reports[0].summary || group.reports[0].Summary || 'Multiple owners reported concerns involving this system.', 300) },
         { label: 'Next step', text: 'Have this system inspected. Owner reports do not establish a confirmed repair or defect.' }
@@ -329,9 +353,16 @@ async function loadKnownIssues(vehicle) {
     title: pattern.title,
     category: pattern.category,
     badge: `${pattern.count} reports`,
+    kind: 'report',
+    preview: pattern.affectedParts,
     sections: [
-      { label: 'Pattern', text: pattern.summary },
-      { label: 'Next step', text: 'Use this only as a reason to inspect the system—not as proof that a part needs replacement.' }
+      { label: 'Affected parts', text: pattern.affectedParts, language: 'english' },
+      { label: 'Possible problem', text: pattern.possibleProblem, language: 'english' },
+      { label: 'What you may notice', text: pattern.symptoms, language: 'english' },
+      { label: 'Inspection / repair', text: pattern.typicalAction, language: 'english' },
+      { label: 'Report pattern', text: pattern.summary, language: 'english' },
+      ...(pattern.originalComponent ? [{ label: 'Original category', text: pattern.originalComponent, language: 'original' }] : []),
+      { label: 'Important', text: 'Owner reports are a reason to inspect—not proof that a part needs replacement.' }
     ]
   }));
 
@@ -398,6 +429,15 @@ $$('.tab').forEach(tab => tab.addEventListener('click', () => {
   $('#diagnose-panel').classList.toggle('hidden', tab.dataset.tab !== 'diagnose');
   $('#known-panel').classList.toggle('hidden', tab.dataset.tab !== 'known');
 }));
+
+$('#translate-issues').addEventListener('click', () => {
+  const panel = $('#known-panel');
+  const button = $('#translate-issues');
+  const showingOriginal = panel.classList.toggle('show-original');
+  button.setAttribute('aria-pressed', String(showingOriginal));
+  button.title = showingOriginal ? 'Show English explanation' : 'Show original Japanese filing text';
+  button.querySelector('span').textContent = showingOriginal ? 'English' : '日本語';
+});
 
 $('#issues-list').addEventListener('click', event => {
   const button = event.target.closest('.issue');
