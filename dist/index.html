@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Understand what may be wrong with your car before approving a repair." />
+  <title>Auto Lookup — Understand your car</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="refinements.css" />
+</head>
+<body>
+  <main>
+    <section class="finder-screen shell" id="search-view">
+      <div class="search-row">
+        <form class="smart-finder" id="vehicle-form" autocomplete="off">
+          <div class="search-field">
+            <svg class="field-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.2 16.2 4 4"/></svg>
+            <label class="sr-only" for="vehicle-search">Search by year, make, or model</label>
+            <input id="vehicle-search" type="search" placeholder="Search year, make, or model" aria-expanded="false" aria-controls="vehicle-suggestions" />
+            <button class="search-submit" type="submit" aria-label="Open selected vehicle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+          </div>
+          <div class="suggestions hidden" id="vehicle-suggestions" role="listbox"></div>
+        </form>
+        <button class="saved-icon" type="button" aria-label="View saved vehicles" title="Saved vehicles"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.8A2.8 2.8 0 0 1 8.8 2h6.4A2.8 2.8 0 0 1 18 4.8V22l-6-3.8L6 22Z"/></svg></button>
+        <button class="saved-icon" id="profile-btn" type="button" aria-label="Open profile" title="Profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.7-3.7 3-5.5 6.5-5.5s5.8 1.8 6.5 5.5"/></svg></button>
+      </div>
+    </section>
+
+    <section class="profile-view shell hidden" id="profile-view">
+      <button class="back" id="profile-back">&larr; Back</button>
+      <div class="profile-card">
+        <div class="profile-heading">
+          <div><h2>Profile</h2><p id="profile-state">Sign in to use your own data providers.</p></div>
+          <button class="text-button hidden" id="sign-out" type="button">Sign out</button>
+        </div>
+
+        <form class="profile-form" id="auth-form">
+          <label>Email<input id="auth-email" type="email" autocomplete="email" required /></label>
+          <label>Password<input id="auth-password" type="password" autocomplete="current-password" minlength="8" required /></label>
+          <div class="profile-actions"><button class="solid-button" id="sign-in" type="submit">Sign in</button><button class="text-button" id="sign-up" type="button">Create account</button></div>
+          <p class="form-status" id="auth-status" role="status"></p>
+        </form>
+
+        <form class="provider-form hidden" id="provider-form">
+          <div class="provider-row"><div><strong>CarsXE</strong><span id="provider-state">Not connected</span></div><span class="connection-dot" id="provider-dot"></span></div>
+          <label>API key<input id="provider-key" type="password" autocomplete="off" placeholder="Paste a CarsXE API key" /></label>
+          <div class="profile-actions"><button class="solid-button" type="submit">Save key</button><button class="text-button hidden" id="remove-provider" type="button">Remove</button></div>
+          <p class="form-status" id="provider-status" role="status">Encrypted before it is stored. It is never sent to the browser again.</p>
+        </form>
+      </div>
+    </section>
+
+    <section class="workspace shell hidden" id="car-view">
+      <button class="back" id="back-btn">← Change vehicle</button>
+      <div class="vehicle-header">
+        <div>
+          <h2><span id="vehicle-year">2020</span> <span id="vehicle-name">Toyota Corolla</span></h2>
+          <p id="vehicle-meta">Vehicle profile</p>
+        </div>
+      </div>
+
+      <div class="dashboard">
+        <aside class="vehicle-card">
+          <div class="mini-car" id="vehicle-visual" role="img" aria-label="Selected vehicle illustration"></div>
+        </aside>
+
+        <section class="content-panel">
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-tab="diagnose">Diagnose</button>
+            <button class="tab" data-tab="known">Known issues <b id="issue-count">—</b></button>
+          </div>
+
+          <div class="tab-content" id="diagnose-panel">
+            <div class="diagnosis-intro" id="diagnosis-intro">
+              <h3>Describe the problem</h3>
+              <div class="input-box">
+                <textarea id="problem-input" rows="3" placeholder="Sound, warning light, smell, or unusual behavior…"></textarea>
+                <button id="start-diagnosis" aria-label="Start diagnosis"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+              </div>
+            </div>
+
+            <div class="chat hidden" id="chat-panel">
+              <div class="chat-status"><div><strong>Guided check</strong></div></div>
+              <div class="message user" id="user-message"></div>
+              <div class="message assistant"><strong>A few quick checks will help.</strong><p>When do you notice it most?</p></div>
+              <div class="choices" id="choices"><button>While braking</button><button>While accelerating</button><button>At idle</button><button>It varies</button></div>
+              <div class="result hidden" id="result">
+                <div class="confidence"><span>Most likely</span><strong>Brake pad wear</strong><em>78% match</em></div>
+                <p>The description fits brake pads approaching their wear limit. The rotors may still be reusable if there is no vibration.</p>
+                <div class="result-grid"><div><span>Likely part</span><strong>Front brake pads</strong></div><div><span>Typical action</span><strong>Inspect, then replace</strong></div><div><span>Urgency</span><strong class="amber">Check this week</strong></div></div>
+                <div class="garage-note"><strong>What to ask the garage</strong><p>“Can you show me the remaining pad thickness and rotor measurement before replacing anything?”</p></div>
+                <small class="disclaimer">This is guidance, not a certified mechanical inspection. Stop driving if braking feels unsafe.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-content hidden" id="known-panel">
+            <div class="issues" id="issues-list"><div class="issues-state">Select a vehicle to load public records.</div></div>
+            <a class="issues-source hidden" id="issues-source" href="https://www.nhtsa.gov/nhtsa-datasets-and-apis" target="_blank" rel="noopener">US public safety data · NHTSA ↗</a>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
