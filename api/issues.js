@@ -14,18 +14,20 @@ async function nhtsa(kind, year, make, model) {
   const url = new URL(`https://api.nhtsa.gov/${kind}/${kind}ByVehicle`);
   Object.entries({ make, model, modelYear: year }).forEach(([key, item]) => url.searchParams.set(key, item));
   const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+  if (response.status === 404) return [];
   if (!response.ok) throw new Error('NHTSA request failed');
   const data = await response.json();
   return data.results || [];
 }
 
 async function carsxeRecalls(year, make, model, key) {
-  if (!key) return [];
+  if (!key) return null;
   const url = new URL('https://api.carsxe.com/v1/recalls-ymm');
   Object.entries({ year, make, model, key }).forEach(([name, item]) => url.searchParams.set(name, item));
   const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.success === false) return [];
+  if (response.status === 404) return [];
+  if (!response.ok || data.success === false) throw new Error('CarsXE recall request failed');
   return (data.data?.recalls || []).map(recall => ({
     Component: recall.component,
     NHTSACampaignNumber: recall.nhtsa_campaign_number,
@@ -42,23 +44,51 @@ const jpDeviceNames = {
   '燃料装置': 'Fuel system', '走行装置': 'Running gear', '排ｶﾞｽ･騒音': 'Emissions / noise',
   'Ａ／Ｔ': 'Transmission', 'ドライブシャフト': 'Driveshaft', 'エアーバッグ': 'Airbag',
   '燃料ホース/パイプ': 'Fuel hose / pipe', 'エンジン一般': 'Engine', '燃料タンク': 'Fuel tank',
-  'コンピュータ': 'Control module', '(ファン)ベルト': 'Auxiliary belt', '配線': 'Wiring'
+  'コンピュータ': 'Control module', '(ファン)ベルト': 'Auxiliary belt', '配線': 'Wiring',
+  'シートベルト': 'Seat belts', '無段変速機': 'Continuously variable transmission (CVT)', 'ドア': 'Doors'
 };
 
 const englishDevice = name => {
-  if (jpDeviceNames[name]) return jpDeviceNames[name];
-  const raw = String(name || '');
-  if (raw.startsWith('\u305d\u306e\u4ed6')) return raw.includes('\u30a8\u30f3\u30b8\u30f3') ? 'Engine' : 'Other systems';
-  return raw || 'Vehicle system';
+  const raw = value(name).normalize('NFKC');
+  if (raw.startsWith('コンピュータ(エンジ')) return 'Engine control module';
+  if (raw.startsWith('その他')) return raw.includes('エンジン') ? 'Engine' : 'Other systems';
+  return jpDeviceNames[raw] || jpDeviceNames[name] || 'Vehicle system';
 };
 
 Object.assign(jpDeviceNames, {
-  '\u305d\u306e\u4ed6(\u30a8\u30f3\u30b8\u30f3)': 'Engine',
   '\u30b9\u30d7\u30ea\u30f3\u30b0/\u30a8\u30a2\u30b5\u30b9': 'Suspension springs / air suspension',
-  '\u305d\u306e\u4ed6': 'Other systems',
   '\u30d6\u30ec\u30fc\u30ad': 'Brakes',
   '\u30b9\u30c6\u30a2\u30ea\u30f3\u30b0': 'Steering'
 });
+
+// English summaries of the MLIT filing text, keyed by notification number.
+const englishFilings = {
+  '1149200': {
+    parts: 'Engine control module software',
+    problem: 'The software can allow too little air into the engine while the vehicle is stopped in Drive. Idle speed may drop and the engine may stall.',
+    action: 'Reprogram the engine control module with the updated software.'
+  },
+  '1148730': {
+    parts: 'Front seat belts and center-pillar trim',
+    problem: 'A front seat belt may be pinched behind the center-pillar trim, leaving slack that can delay restraint and increase the risk of injury in a crash.',
+    action: 'Inspect the front seat belts and correct the installation if there is slack.'
+  },
+  '1151890': {
+    parts: 'CVT steel belt and controller software',
+    problem: 'The CVT belt may slip under heavy load and produce debris that disrupts hydraulic pressure. The vehicle may lose the ability to drive.',
+    action: 'Update the CVT controller software and replace the CVT if inspection confirms belt slip. If slip is confirmed later on a vehicle whose CVT was retained, the filing provides for free replacement.'
+  },
+  '1151520': {
+    parts: 'Front door latches and strikers',
+    problem: 'In a side impact, side-airbag deployment can deform a front door latch. The latch may disengage and let the door open.',
+    action: 'Replace the front door latches and strikers with updated parts.'
+  },
+  '1148440': {
+    parts: 'Fuel-vapor hose, vent pipe, and pressure control valve',
+    problem: 'A sticking pressure valve can deform the fuel tank and make the gauge read too high. The engine can stall after running out of fuel without the low-fuel light coming on.',
+    action: 'Replace the fuel-vapor hose and vent pipe with updated parts.'
+  }
+};
 
 function guidanceFor(component) {
   const name = String(component || '').toLowerCase();
@@ -84,7 +114,9 @@ async function japanModelRecords(year, make, model) {
     fetch(`${base}/recalls?${query}`, { signal: AbortSignal.timeout(12000) }),
     fetch(`${base}/complaints?${query}`, { signal: AbortSignal.timeout(12000) })
   ]);
-  if (!recallResponse.ok && !complaintResponse.ok) return { recalls: [], patterns: [], sourceUrl: null };
+  if ([recallResponse, complaintResponse].some(response => !response.ok && response.status !== 404)) {
+    throw new Error('Japan public records request failed');
+  }
   const recallData = recallResponse.ok ? await recallResponse.json() : {};
   const complaintData = complaintResponse.ok ? await complaintResponse.json() : {};
   const recallMatch = providerMatches(make, model, recallData);
@@ -97,7 +129,8 @@ async function japanModelRecords(year, make, model) {
     .slice(0, 5)
     .map(item => {
       const component = englishDevice(item.device);
-      const guidance = guidanceFor(component);
+      const filing = englishFilings[item.notificationNo];
+      const guidance = filing || guidanceFor(component);
       return {
       Component: component,
       NHTSACampaignNumber: `JP ${item.notificationNo}`,
@@ -105,7 +138,8 @@ async function japanModelRecords(year, make, model) {
       Consequence: guidance.problem,
       Remedy: guidance.action,
       AffectedParts: guidance.parts,
-      Symptoms: guidance.symptoms,
+      Symptoms: guidance.symptoms || null,
+      EnglishFilingSummary: Boolean(filing),
       OriginalSituation: item.situation || null,
       OriginalRemedy: item.measures || null,
       OriginalComponent: item.device || null,
@@ -142,13 +176,14 @@ module.exports = async function handler(req, res) {
   const make = value(req.query.make);
   const model = value(req.query.model);
   if (!/^\d{4}$/.test(year) || !make || !model) return json(res, 400, { error: 'year, make and model are required' });
-  const cacheKey = `issues:v4:${year}:${slug(make)}:${slug(model)}`;
+  const providerScope = process.env.CARSXE_API_KEY || req.headers.authorization ? 'provider' : 'public';
+  const cacheKey = `issues:v6:${providerScope}:${year}:${slug(make)}:${slug(model)}`;
   try {
     const cached = await readCache(cacheKey);
-    if (cached) return json(res, 200, { ...cached.payload, cache: 'hit' });
+    if (cached) return json(res, 200, { ...cached.payload, cache: 'hit', expiresAt: cached.expires_at });
   } catch (_) {}
 
-  const user = await currentUser(req);
+  const user = await currentUser(req).catch(() => null);
   let providerKey = null;
   try { providerKey = await getProviderKey(user?.id); } catch (_) {}
   providerKey ||= process.env.CARSXE_API_KEY;
@@ -162,22 +197,26 @@ module.exports = async function handler(req, res) {
   for (const recall of [...(publicRecalls.value || []), ...(providerRecalls.value || []), ...(japanRecords.value?.recalls || [])]) {
     recalls.set(recall.NHTSACampaignNumber || recall.nhtsaCampaignNumber || JSON.stringify(recall), recall);
   }
-  const sources = ['NHTSA'];
-  if (providerKey) sources.push('CarsXE');
+  const sources = [];
+  if (publicRecalls.value || complaints.value) sources.push('NHTSA');
+  if (providerRecalls.value) sources.push('CarsXE');
   if (japanRecords.value?.recalls?.length || japanRecords.value?.patterns?.length) sources.push('Japan MLIT');
   const payload = {
     recalls: [...recalls.values()],
     complaints: complaints.value || [],
     patterns: japanRecords.value?.patterns || [],
-    reached: [publicRecalls, complaints, providerRecalls, japanRecords].some(result => result.status === 'fulfilled'),
+    reached: Boolean(publicRecalls.value || complaints.value || providerRecalls.value || japanRecords.value),
     sources,
     sourceUrl: japanRecords.value?.sourceUrl || null,
     verifiedDate: japanRecords.value?.verifiedDate || null,
     fetchedAt: new Date().toISOString()
   };
+  if (!payload.reached) return json(res, 502, { error: 'Public safety data is temporarily unavailable' });
+  const partial = [publicRecalls, complaints, providerRecalls, japanRecords].some(result => result.status === 'rejected');
+  const expiresAt = new Date(Date.now() + (partial ? 3600000 : 7 * 86400000)).toISOString();
   await writeCache({
     cache_key: cacheKey, year: Number(year), make, model, source: payload.sources.join('+'), payload,
-    fetched_at: new Date().toISOString(), expires_at: new Date(Date.now() + 7 * 86400000).toISOString()
+    fetched_at: new Date().toISOString(), expires_at: expiresAt
   }).catch(() => {});
-  return json(res, 200, { ...payload, cache: 'miss' });
+  return json(res, 200, { ...payload, cache: 'miss', expiresAt });
 };

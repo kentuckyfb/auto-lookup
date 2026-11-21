@@ -15,7 +15,7 @@ const routes = {
   '/api/diagnose': require('./api/diagnose.js'),
   '/api/providers': require('./api/providers.js')
 };
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg' };
 
 async function body(req) {
   if (!['POST', 'PUT', 'PATCH'].includes(req.method)) return null;

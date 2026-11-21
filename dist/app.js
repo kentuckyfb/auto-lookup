@@ -47,35 +47,123 @@ const shapes = {
 };
 
 const searchInput = $('#vehicle-search');
+const yearSelect = $('#vehicle-model-year');
 const suggestions = $('#vehicle-suggestions');
-let catalog = Object.entries(vehicles).flatMap(([make, models]) =>
+const catalog = Object.entries(vehicles).flatMap(([make, models]) =>
   models.map(([model, type]) => ({ make, model, type, label: `${make} ${model}` }))
 );
-const loadedCatalogs = new Set();
+const catalogByYear = new Map();
+const historyKey = 'auto_lookup_recent_searches';
+const recentSearchLimit = 5;
+let recentSearches = lookupCache.read(historyKey, []).slice(0, recentSearchLimit);
+const savedVehiclesKey = 'auto_lookup_saved_vehicles';
+let savedVehicles = lookupCache.read(savedVehiclesKey, []);
 let matches = [];
 let activeIndex = -1;
 let selectedVehicle = null;
 
 const normalize = value => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const vehicleKey = ({ year, make, model, trim }) => JSON.stringify([year, normalize(make), normalize(model), (trim || '').toLowerCase()]);
+const vehicleTitle = ({ year, label, trim }) => `${year} ${label}${trim ? ` · ${trim}` : ''}`;
+const vehicleRecord = ({ year, make, model, type, label, trim = '' }) => ({ year, make, model, type, label, trim });
+
+const latestYear = Math.max(new Date().getFullYear() + 1, ...[...recentSearches, ...savedVehicles].map(vehicle => Number(vehicle.year)));
+const modelYears = [];
+for (let year = latestYear; year >= 1886; year--) modelYears.push(new Option(year, year));
+yearSelect.append(...modelYears);
+
+function renderRecentSearches() {
+  const container = $('#recent-searches');
+  container.replaceChildren();
+  container.classList.toggle('hidden', !recentSearches.length);
+  for (const vehicle of recentSearches) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = vehicleTitle(vehicle);
+    button.addEventListener('click', () => chooseVehicle(vehicle));
+    container.appendChild(button);
+  }
+}
+
+function isVehicleSaved(vehicle) {
+  const key = vehicleKey(vehicle);
+  return savedVehicles.some(item => vehicleKey(item) === key);
+}
+
+function updateSaveButton() {
+  const saved = Boolean(selectedVehicle && isVehicleSaved(selectedVehicle));
+  const button = $('#save-vehicle');
+  button.setAttribute('aria-pressed', String(saved));
+  button.title = saved ? 'Remove from saved vehicles' : 'Save to profile';
+}
+
+function renderSavedVehicles() {
+  const list = $('#saved-vehicles');
+  list.replaceChildren();
+  $('#saved-vehicles-empty').classList.toggle('hidden', Boolean(savedVehicles.length));
+
+  for (const [index, vehicle] of savedVehicles.entries()) {
+    const row = document.createElement('li');
+    row.className = 'saved-vehicle-row';
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'saved-vehicle-open';
+    open.textContent = vehicleTitle(vehicle);
+    open.addEventListener('click', () => chooseVehicle(vehicle));
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'saved-vehicle-remove text-button';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove ${vehicleTitle(vehicle)}`);
+    remove.addEventListener('click', () => {
+      removeSavedVehicle(vehicle);
+      const remaining = list.querySelectorAll('.saved-vehicle-remove');
+      (remaining[index] || remaining[index - 1] || $('#saved-vehicles-heading')).focus();
+    });
+
+    row.append(open, remove);
+    list.appendChild(row);
+  }
+}
+
+function storeSavedVehicles(vehicles) {
+  savedVehicles = vehicles;
+  lookupCache.write(savedVehiclesKey, vehicles);
+  renderSavedVehicles();
+  updateSaveButton();
+}
+
+function removeSavedVehicle(vehicle) {
+  const key = vehicleKey(vehicle);
+  storeSavedVehicles(savedVehicles.filter(item => vehicleKey(item) !== key));
+}
+
+async function lookupJson(url, token) {
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(28000) });
+  if (!response.ok) throw new Error('Vehicle lookup failed');
+  return response.json();
+}
 
 function findMatches(value) {
-  const clean = normalize(value);
-  const year = clean.match(/\b(19[9][5-9]|20(?:0[0-9]|1[0-9]|2[0-6]))\b/)?.[0] || '';
-  const words = clean.replace(year, '').split(' ').filter(Boolean);
-  if (!words.length) return catalog.slice(0, 8).map(vehicle => ({ ...vehicle, year: year || '2020', score: 0 }));
-  return catalog.map(vehicle => {
+  const year = yearSelect.value;
+  const words = normalize(value).split(' ').filter(Boolean);
+  if (!words.length) return [];
+  const yearCatalog = [...catalog, ...[...(catalogByYear.get(year)?.values() || [])].flat()];
+  return yearCatalog.map(vehicle => {
     const aliases = vehicle.model.includes('Stingray') ? ' stringray vette' : vehicle.make === 'MINI' ? ' mini cooper' : '';
     const haystack = normalize(vehicle.label + aliases);
     const hits = words.filter(word => haystack.includes(word));
     const starts = words.filter(word => haystack.split(' ').some(part => part.startsWith(word))).length;
-    return { ...vehicle, year: year || '2020', score: hits.length * 10 + starts * 2 - haystack.length / 100 };
+    return { ...vehicle, year, score: hits.length * 10 + starts * 2 - haystack.length / 100 };
   }).filter(vehicle => vehicle.score >= words.length * 10).sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)).slice(0, 8);
 }
 
 function renderSuggestions() {
+  const previousScroll = suggestions.scrollTop;
   suggestions.innerHTML = '';
-  if (!searchInput.value.trim()) { suggestions.classList.add('hidden'); searchInput.setAttribute('aria-expanded', 'false'); return; }
   matches = findMatches(searchInput.value);
+  if (!searchInput.value.trim()) { suggestions.classList.add('hidden'); searchInput.setAttribute('aria-expanded', 'false'); return; }
   if (!matches.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-suggestion';
@@ -87,11 +175,12 @@ function renderSuggestions() {
       button.type = 'button';
       button.className = `suggestion${index === activeIndex ? ' active' : ''}`;
       button.setAttribute('role', 'option');
+      button.setAttribute('aria-selected', String(index === activeIndex));
       const info = document.createElement('span');
       const title = document.createElement('strong');
       title.textContent = vehicle.label;
       const meta = document.createElement('small');
-      meta.textContent = `${vehicle.type} · ${vehicle.year}`;
+      meta.textContent = [vehicle.type, vehicle.year].filter(Boolean).join(' · ');
       const action = document.createElement('em');
       action.textContent = 'Select →';
       info.append(title, meta);
@@ -102,134 +191,172 @@ function renderSuggestions() {
   }
   suggestions.classList.remove('hidden');
   searchInput.setAttribute('aria-expanded', 'true');
+  const active = suggestions.querySelector('.suggestion.active');
+  if (active) {
+    const top = active.offsetTop;
+    const bottom = top + active.offsetHeight;
+    suggestions.scrollTop = Math.max(bottom - suggestions.clientHeight, Math.min(previousScroll, top));
+  }
 }
 
-async function augmentCatalog(value) {
+async function augmentCatalog(value, year) {
+  if (!year) return;
   const normalized = normalize(value);
-  const year = normalized.match(/\b(19\d{2}|20\d{2})\b/)?.[0] || String(new Date().getFullYear());
-  const make = Object.keys(vehicles).sort((a, b) => b.length - a.length).find(name => normalized.includes(normalize(name)));
+  const make = Object.keys(vehicles).sort((a, b) => b.length - a.length).find(name => ` ${normalized} `.includes(` ${normalize(name)} `));
   if (!make) return;
-  const key = `${year}|${make}`;
-  if (loadedCatalogs.has(key)) return;
-  loadedCatalogs.add(key);
   try {
-    let response = await fetch(`/api/catalog?${new URLSearchParams({ year, make })}`);
-    if (!response.ok) response = await fetch(`https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}?format=json`);
-    const data = await response.json();
-    const models = data.models || (data.Results || []).map(item => item.Model_Name);
-    const known = new Set(catalog.map(item => normalize(`${item.make} ${item.model}`)));
-    models.filter(Boolean).forEach(model => {
-      const identity = normalize(`${make} ${model}`);
-      if (!known.has(identity)) catalog.push({ make, model, type: 'vehicle', label: `${make} ${model}` });
+    const models = await lookupCache.get('catalog', `${year}|${normalize(make)}`, async () => {
+      try {
+        const data = await lookupJson(`/api/catalog?${new URLSearchParams({ year, make })}`);
+        return { value: data.models, expiresAt: data.expiresAt };
+      } catch (_) {
+        const data = await lookupJson(`https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}?format=json`);
+        return { value: data.Results.map(item => item.Model_Name), expiresAt: new Date(Date.now() + 86400000).toISOString() };
+      }
     });
-    renderSuggestions();
+    const known = new Set(catalog.map(item => normalize(`${item.make} ${item.model}`)));
+    const entries = models.filter(model => model && !known.has(normalize(`${make} ${model}`)))
+      .map(model => ({ make, model, type: 'vehicle', label: `${make} ${model}` }));
+    if (!catalogByYear.has(year)) catalogByYear.set(year, new Map());
+    catalogByYear.get(year).set(make, entries);
+    if (searchInput.value === value && yearSelect.value === year && !$('#search-view').classList.contains('hidden')) renderSuggestions();
   } catch (_) { /* Keep the local catalogue when the public service is unavailable. */ }
 }
 
 function chooseVehicle(vehicle) {
-  selectedVehicle = vehicle;
-  searchInput.value = `${vehicle.year} ${vehicle.label}`;
+  clearTimeout(catalogTimer);
+  searchInput.value = vehicle.label;
   suggestions.classList.add('hidden');
   searchInput.setAttribute('aria-expanded', 'false');
+  if (!vehicle.year) {
+    yearSelect.reportValidity();
+    return;
+  }
+  selectedVehicle = vehicle;
+  yearSelect.value = vehicle.year;
+  const recent = vehicleRecord(vehicle);
+  recentSearches = [recent, ...recentSearches.filter(item => vehicleKey(item) !== vehicleKey(recent))].slice(0, recentSearchLimit);
+  lookupCache.write(historyKey, recentSearches);
+  renderRecentSearches();
   openVehicle(vehicle);
 }
 
-async function findVehiclePhoto(vehicle) {
-  const queries = [`"${vehicle.label}"`, `${vehicle.label} automobile`];
-  for (const query of queries) {
-    const params = new URLSearchParams({
-      action: 'query', generator: 'search', gsrsearch: query, gsrnamespace: '0', gsrlimit: '6',
-      prop: 'pageimages|info', piprop: 'thumbnail', pithumbsize: '1000', inprop: 'url', format: 'json', origin: '*'
-    });
-    try {
-      const response = await fetch(`https://en.wikipedia.org/w/api.php?${params}`);
-      if (!response.ok) continue;
-      const data = await response.json();
-      const pages = Object.values(data.query?.pages || {}).sort((a, b) => (a.index || 99) - (b.index || 99));
-      const label = normalize(vehicle.label);
-      const model = normalize(vehicle.model);
-      const result = pages.filter(page => page.thumbnail?.source).sort((a, b) => {
-        const score = page => {
-          const title = normalize(page.title);
-          return (title === label ? 100 : 0) + (title.includes(model) ? 30 : 0) + (title.includes(normalize(vehicle.make)) ? 15 : 0) - (page.index || 0);
-        };
-        return score(b) - score(a);
-      })[0];
-      if (result) {
-        return { src: result.thumbnail.source, page: result.fullurl, alt: `${vehicle.label} — ${result.title}` };
-      }
-    } catch (_) { /* Try the broader query. */ }
+async function findVehiclePhotos(vehicle) {
+  const year = Number(vehicle.year);
+  const trim = vehicle.trim || '';
+  if (normalize(vehicle.label) === 'suzuki wagon r' && year >= 2017 && year <= 2021 && (!trim || normalize(trim) === 'hybrid fx')) {
+    return [{
+      url: '/images/suzuki-wagon-r-hybrid-fx.jpg',
+      sourceUrl: 'https://commons.wikimedia.org/wiki/File:2017-2022_Suzuki_Wagon_R_Hybrid_FX.jpg',
+      title: 'Japanese-market Suzuki Wagon R Hybrid FX, sixth generation',
+      artist: 'TTTNIS',
+      license: 'CC0 1.0',
+      licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+      credit: 'Wikimedia Commons'
+    }];
   }
-  return null;
+  const params = new URLSearchParams({ year: vehicle.year, make: vehicle.make, model: vehicle.model, photoOnly: '1' });
+  if (trim) params.set('trim', trim);
+  const token = localStorage.getItem('auto_lookup_access_token');
+  return lookupCache.get('photos', `${token ? 'signed-in' : 'public'}|${vehicleKey(vehicle)}`, async () => {
+    const data = await lookupJson(`/api/vehicle?${params}`, token);
+    return { value: data.images, expiresAt: data.expiresAt };
+  });
 }
 
 async function renderVehiclePhoto(vehicle) {
   const visual = $('#vehicle-visual');
+  const caption = $('#photo-caption');
+  const credit = $('#photo-credit');
+  const attribution = $('#photo-attribution');
+  caption.classList.add('hidden');
   visual.innerHTML = '<div class="photo-loading">Finding vehicle photo…</div>';
-  let photo = null;
+  let photos;
   try {
-    const params = new URLSearchParams({ year: vehicle.year, make: vehicle.make, model: vehicle.model });
-    const token = localStorage.getItem('auto_lookup_access_token');
-    const response = await fetch(`/api/vehicle?${params}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    if (response.ok) {
-      const data = await response.json();
-      const image = data.images?.[0];
-      if (image?.url) photo = { src: image.url, page: image.sourceUrl || image.url, alt: `${vehicle.year} ${vehicle.label}`, credit: 'Source' };
-    }
-  } catch (_) { /* Static previews use the public fallback. */ }
-  photo ||= await findVehiclePhoto(vehicle);
-  if (!photo) {
-    visual.innerHTML = '<div class="photo-fallback">A verified photo could not be loaded for this model.</div>';
+    photos = await findVehiclePhotos(vehicle);
+  } catch (_) {
+    if (selectedVehicle === vehicle) visual.innerHTML = '<div class="photo-fallback">Vehicle photos are temporarily unavailable.</div>';
     return;
   }
-  visual.innerHTML = '';
-  const image = document.createElement('img');
-  image.className = 'vehicle-photo';
-  image.src = photo.src;
-  image.alt = photo.alt;
-  image.referrerPolicy = 'no-referrer';
-  image.addEventListener('error', () => { visual.innerHTML = '<div class="photo-fallback">The vehicle photo could not be loaded.</div>'; });
-  const credit = document.createElement('a');
-  credit.className = 'photo-credit';
-  credit.href = photo.page;
-  credit.target = '_blank';
-  credit.rel = 'noopener';
-  credit.textContent = `${photo.credit || 'Wikipedia'} ↗`;
-  visual.append(image, credit);
+
+  function showPhoto(index) {
+    if (selectedVehicle !== vehicle) return;
+    const photo = photos[index];
+    if (!photo) {
+      visual.innerHTML = photos.length
+        ? '<div class="photo-fallback">The matching photos could not be loaded.</div>'
+        : '<div class="photo-fallback">No matching photo found for this vehicle.</div>';
+      caption.classList.add('hidden');
+      return;
+    }
+    const image = document.createElement('img');
+    image.className = 'vehicle-photo';
+    image.alt = photo.title || vehicleTitle(vehicle);
+    image.referrerPolicy = 'no-referrer';
+    image.addEventListener('load', () => displayPhoto(image, photo), { once: true });
+    image.addEventListener('error', () => showPhoto(index + 1), { once: true });
+    image.src = photo.url;
+  }
+
+  function displayPhoto(image, photo) {
+    if (selectedVehicle !== vehicle) return;
+    credit.href = /^https:\/\//i.test(photo.sourceUrl || '') ? photo.sourceUrl : photo.url;
+    credit.textContent = `${photo.credit} ↗`;
+    credit.title = photo.title || '';
+    visual.replaceChildren(image);
+    attribution.textContent = photo.artist || '';
+    const separator = photo.artist ? ' · ' : '';
+    if (photo.license && /^https:\/\//i.test(photo.licenseUrl || '')) {
+      const license = document.createElement('a');
+      license.href = photo.licenseUrl;
+      license.target = '_blank';
+      license.rel = 'noopener';
+      license.textContent = photo.license;
+      attribution.append(separator, license);
+    } else if (photo.license) {
+      attribution.append(`${separator}${photo.license}`);
+    }
+    attribution.classList.toggle('hidden', !attribution.textContent);
+    caption.classList.remove('hidden');
+  }
+
+  showPhoto(0);
 }
 
-const issueCache = new Map();
 let issueRequest = 0;
 const nhtsaAliases = { 'Corvette Stingray': 'Corvette', 'Cooper 3-Door': 'Cooper', 'Cooper 5-Door': 'Cooper', 'Cooper Convertible': 'Cooper' };
 const pretty = value => String(value || 'Vehicle').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const clip = (value, length = 360) => String(value || '').length > length ? `${String(value).slice(0, length).trim()}…` : String(value || '');
 
-function buildIssue({ title, category, badge, preview, kind = 'report', sections }) {
+function buildIssue({ title, category, badge, preview, original, kind = 'report', sections }) {
   const item = document.createElement('div');
   item.className = `issue-item issue-${kind}`;
   const button = document.createElement('button');
   button.className = 'issue';
   button.type = 'button';
   button.setAttribute('aria-expanded', 'false');
+  const appendText = (parent, tag, english, japanese, className = '') => {
+    const copy = document.createElement(tag);
+    copy.textContent = english;
+    copy.className = className;
+    parent.appendChild(copy);
+    if (japanese) {
+      copy.classList.add('issue-language-english');
+      const translated = document.createElement(tag);
+      translated.textContent = japanese;
+      translated.lang = 'ja';
+      translated.className = className;
+      translated.classList.add('issue-language-original');
+      parent.appendChild(translated);
+    }
+  };
   const heading = document.createElement('div');
-  const strong = document.createElement('strong');
-  strong.textContent = title;
-  const meta = document.createElement('p');
-  meta.textContent = category;
-  heading.append(strong, meta);
-  if (preview) {
-    const previewCopy = document.createElement('small');
-    previewCopy.textContent = preview;
-    heading.appendChild(previewCopy);
-  }
+  appendText(heading, 'strong', title, original?.title);
+  if (preview) appendText(heading, 'small', preview, original?.preview);
+  appendText(heading, 'p', category, original?.category);
   const tail = document.createElement('span');
   tail.className = 'issue-tail';
-  if (badge) {
-    const tag = document.createElement('em');
-    tag.className = 'issue-tag';
-    tag.textContent = badge;
-    tail.appendChild(tag);
-  }
+  if (badge) appendText(tail, 'em', badge, original?.badge, 'issue-tag');
   const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   arrow.setAttribute('viewBox', '0 0 24 24');
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -241,7 +368,8 @@ function buildIssue({ title, category, badge, preview, kind = 'report', sections
   detail.className = 'issue-detail hidden';
   sections.forEach(section => {
     const block = document.createElement('div');
-    if (section.language) block.className = `issue-language issue-language-${section.language}`;
+    if (section.language) block.className = `issue-language-${section.language}`;
+    if (section.language === 'original') block.lang = 'ja';
     const label = document.createElement('span');
     label.textContent = section.label;
     const copy = document.createElement(section.url ? 'a' : 'p');
@@ -264,9 +392,42 @@ async function fetchNhtsa(kind, vehicle) {
   url.searchParams.set('make', vehicle.make);
   url.searchParams.set('model', model);
   url.searchParams.set('modelYear', vehicle.year);
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`NHTSA ${kind} request failed`);
-  return response.json();
+  return lookupJson(url);
+}
+
+function summarizeComplaints(complaints) {
+  const groups = new Map();
+  for (const complaint of complaints) {
+    const component = (complaint.components || complaint.Components || 'Other').split(',')[0].trim();
+    const group = groups.get(component);
+    if (group) group.count++;
+    else groups.set(component, { component, count: 1, summary: clip(complaint.summary || complaint.Summary, 300) });
+  }
+  return [...groups.values()].filter(group => group.count >= 2).sort((a, b) => b.count - a.count).slice(0, 4);
+}
+
+async function fetchKnownIssues(vehicle) {
+  const model = nhtsaAliases[vehicle.model] || vehicle.model;
+  const params = new URLSearchParams({ year: vehicle.year, make: vehicle.make, model });
+  const token = localStorage.getItem('auto_lookup_access_token');
+  const key = `${token ? 'signed-in' : 'public'}|${vehicleKey({ ...vehicle, model, trim: '' })}`;
+  return lookupCache.get('issues', key, async () => {
+    let data;
+    try {
+      data = await lookupJson(`/api/issues?${params}`, token);
+    } catch (_) {
+      const [recalls, complaints] = await Promise.allSettled([fetchNhtsa('recalls', vehicle), fetchNhtsa('complaints', vehicle)]);
+      const reached = Boolean(recalls.value || complaints.value);
+      data = {
+        recalls: recalls.value?.results || [],
+        complaints: complaints.value?.results || [],
+        reached,
+        expiresAt: reached ? new Date(Date.now() + 3600000).toISOString() : null
+      };
+    }
+    const { complaints, expiresAt, ...records } = data;
+    return { value: { ...records, complaintPatterns: summarizeComplaints(complaints || []) }, expiresAt };
+  });
 }
 
 async function loadKnownIssues(vehicle) {
@@ -274,30 +435,12 @@ async function loadKnownIssues(vehicle) {
   const list = $('#issues-list');
   const count = $('#issue-count');
   const source = $('#issues-source');
-  list.innerHTML = '<div class="issues-state loading">Loading US public records…</div>';
+  const translate = $('#translate-issues');
+  translate.classList.add('hidden');
+  list.innerHTML = '<div class="issues-state loading">Loading public records…</div>';
   count.textContent = '…';
   source.classList.add('hidden');
-  const key = `${vehicle.year}|${vehicle.make}|${vehicle.model}`;
-  let records = issueCache.get(key);
-  if (!records) {
-    try {
-      const params = new URLSearchParams({ year: vehicle.year, make: vehicle.make, model: nhtsaAliases[vehicle.model] || vehicle.model });
-      const token = localStorage.getItem('auto_lookup_access_token');
-      const response = await fetch(`/api/issues?${params}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!response.ok) throw new Error('Backend unavailable');
-      records = await response.json();
-    } catch (_) {
-      const [recallResult, complaintResult] = await Promise.allSettled([
-        fetchNhtsa('recalls', vehicle), fetchNhtsa('complaints', vehicle)
-      ]);
-      records = {
-        recalls: recallResult.status === 'fulfilled' ? (recallResult.value.results || []) : [],
-        complaints: complaintResult.status === 'fulfilled' ? (complaintResult.value.results || []) : [],
-        reached: recallResult.status === 'fulfilled' || complaintResult.status === 'fulfilled'
-      };
-    }
-    issueCache.set(key, records);
-  }
+  const records = await fetchKnownIssues(vehicle);
   if (request !== issueRequest) return;
   if (records.sources?.includes('CarsXE')) {
     source.href = 'https://docs.carsxe.com/docs/products/recalls';
@@ -311,40 +454,47 @@ async function loadKnownIssues(vehicle) {
     source.textContent = 'Official records · Japan MLIT + NHTSA ↗';
   }
 
-  const recallIssues = records.recalls.slice(0, 4).map(recall => ({
-    title: pretty(recall.Component || recall.component),
-    category: `${recall.NHTSACampaignNumber || recall.nhtsaCampaignNumber || 'Official recall'} · Official campaign`,
-    badge: 'Recall',
-    kind: 'recall',
-    preview: clip(recall.AffectedParts || recall.Component || recall.component || 'Vehicle system', 90),
-    sections: [
-      { label: 'Affected parts', text: clip(recall.AffectedParts || recall.Component || recall.component || 'See the campaign record.', 260), language: 'english' },
-      { label: 'What could happen', text: clip(recall.Consequence || recall.consequence || recall.Summary || recall.summary || 'See the official recall record.'), language: 'english' },
-      ...(recall.Symptoms ? [{ label: 'What you may notice', text: recall.Symptoms, language: 'english' }] : []),
-      { label: 'Usual action', text: clip(recall.Remedy || recall.remedy || 'Contact an authorised dealer with the campaign number.'), language: 'english' },
-      ...(recall.OriginalSituation ? [{ label: '不具合の内容', text: recall.OriginalSituation, language: 'original' }] : []),
-      ...(recall.OriginalRemedy ? [{ label: '改善の内容', text: recall.OriginalRemedy, language: 'original' }] : []),
-      { label: 'Eligibility', text: 'This is a model-line match. Confirm the campaign against the chassis or VIN before approving any repair.' },
-      ...(recall.SourceUrl ? [{ label: 'Official notice', text: 'Open campaign filing ↗', url: recall.SourceUrl }] : [])
-    ]
-  }));
-
-  const groups = new Map();
-  records.complaints.forEach(complaint => {
-    const component = (complaint.components || complaint.Components || 'Other').split(',')[0].trim();
-    const group = groups.get(component) || { component, reports: [] };
-    group.reports.push(complaint);
-    groups.set(component, group);
+  const recallIssues = records.recalls.slice(0, 4).map(recall => {
+    const component = recall.Component || recall.component;
+    const campaign = recall.NHTSACampaignNumber || recall.nhtsaCampaignNumber || 'Official recall';
+    const japanese = Boolean(recall.OriginalComponent || recall.OriginalSituation || recall.OriginalRemedy);
+    const language = japanese ? 'english' : undefined;
+    const genericGuidance = japanese && !recall.EnglishFilingSummary;
+    return {
+      title: japanese ? (component || 'Vehicle system') : pretty(component),
+      category: `${campaign} · Official campaign`,
+      badge: 'Recall',
+      kind: 'recall',
+      preview: clip(recall.AffectedParts || component || 'Vehicle system', 90),
+      original: japanese ? {
+        title: recall.OriginalComponent || '車両装置',
+        category: `${campaign} · リコール届出`,
+        badge: 'リコール',
+        preview: clip(recall.OriginalSituation || recall.OriginalRemedy || '届出内容を確認', 90)
+      } : null,
+      sections: [
+        { label: genericGuidance ? 'Related parts' : 'Affected parts', text: clip(recall.AffectedParts || component || 'See the campaign record.', 260), language },
+        { label: genericGuidance ? 'General guidance' : 'What could happen', text: clip(recall.Consequence || recall.consequence || recall.Summary || recall.summary || 'See the official recall record.'), language },
+        ...(recall.Symptoms ? [{ label: 'What you may notice', text: recall.Symptoms, language }] : []),
+        { label: japanese && !genericGuidance ? 'Campaign remedy' : 'Usual action', text: clip(recall.Remedy || recall.remedy || 'Contact an authorised dealer with the campaign number.'), language },
+        ...(recall.OriginalSituation ? [{ label: '不具合の内容', text: recall.OriginalSituation, language: 'original' }] : []),
+        ...(recall.OriginalRemedy ? [{ label: '改善の内容', text: recall.OriginalRemedy, language: 'original' }] : []),
+        { label: 'Eligibility', text: 'This is a model-line match. Confirm the campaign against the chassis or VIN before approving any repair.', language },
+        ...(japanese ? [{ label: '対象車両', text: '修理の前に、車台番号でリコールの対象車両かどうかを確認してください。', language: 'original' }] : []),
+        ...(recall.SourceUrl ? [{ label: 'Official notice', text: 'Open campaign filing ↗', url: recall.SourceUrl, language }] : []),
+        ...(japanese && recall.SourceUrl ? [{ label: '公式資料', text: 'リコール届出を開く ↗', url: recall.SourceUrl, language: 'original' }] : [])
+      ]
+    };
   });
-  const complaintIssues = [...groups.values()].filter(group => group.reports.length >= 2)
-    .sort((a, b) => b.reports.length - a.reports.length).slice(0, 4).map(group => ({
+
+  const complaintIssues = records.complaintPatterns.map(group => ({
       title: pretty(group.component),
       category: 'Owner reports',
-      badge: `${group.reports.length} reports`,
+      badge: `${group.count} reports`,
       kind: 'report',
       preview: `${pretty(group.component)} system`,
       sections: [
-        { label: 'Pattern', text: clip(group.reports[0].summary || group.reports[0].Summary || 'Multiple owners reported concerns involving this system.', 300) },
+        { label: 'Pattern', text: group.summary || 'Multiple owners reported concerns involving this system.' },
         { label: 'Next step', text: 'Have this system inspected. Owner reports do not establish a confirmed repair or defect.' }
       ]
     }));
@@ -355,15 +505,23 @@ async function loadKnownIssues(vehicle) {
     badge: `${pattern.count} reports`,
     kind: 'report',
     preview: pattern.affectedParts,
+    original: pattern.originalComponent ? {
+      title: `${pattern.originalComponent}の報告`,
+      category: '日本のユーザー報告',
+      badge: `${pattern.count}件`,
+      preview: `集計対象の報告の${pattern.share}%`
+    } : null,
     sections: [
-      { label: 'Affected parts', text: pattern.affectedParts, language: 'english' },
-      { label: 'Possible problem', text: pattern.possibleProblem, language: 'english' },
-      { label: 'What you may notice', text: pattern.symptoms, language: 'english' },
-      { label: 'Inspection / repair', text: pattern.typicalAction, language: 'english' },
-      { label: 'Report pattern', text: pattern.summary, language: 'english' },
-      ...(pattern.originalComponent ? [{ label: 'Original category', text: pattern.originalComponent, language: 'original' }] : []),
-      { label: 'Important', text: 'Owner reports are a reason to inspect—not proof that a part needs replacement.' }
-    ]
+      { label: 'Affected parts', text: pattern.affectedParts },
+      { label: 'Possible problem', text: pattern.possibleProblem },
+      { label: 'What you may notice', text: pattern.symptoms },
+      { label: 'Inspection / repair', text: pattern.typicalAction },
+      { label: 'Report pattern', text: pattern.summary },
+      { label: 'Important', text: 'Owner reports do not establish that a part needs replacement.' }
+    ].map(section => ({ ...section, language: pattern.originalComponent ? 'english' : undefined })).concat(pattern.originalComponent ? [
+      { label: '報告の内訳', text: `${pattern.originalComponent}に関する報告は${pattern.count}件で、集計対象の${pattern.share}%です。`, language: 'original' },
+      { label: '注意', text: 'ユーザー報告だけでは、不具合や部品交換の必要性は確認できません。', language: 'original' }
+    ] : [])
   }));
 
   const items = [...recallIssues, ...complaintIssues, ...modelPatterns];
@@ -376,6 +534,7 @@ async function loadKnownIssues(vehicle) {
   } else {
     items.forEach(item => list.appendChild(buildIssue(item)));
     source.classList.remove('hidden');
+    translate.classList.toggle('hidden', !items.some(item => item.original));
   }
   count.textContent = items.length;
 }
@@ -383,22 +542,35 @@ async function loadKnownIssues(vehicle) {
 function openVehicle(vehicle) {
   $('#vehicle-name').textContent = vehicle.label;
   $('#vehicle-year').textContent = vehicle.year;
-  $('#vehicle-meta').textContent = `${vehicle.type[0].toUpperCase()}${vehicle.type.slice(1)}`;
+  const meta = $('#vehicle-meta');
+  meta.textContent = vehicle.trim || '';
+  meta.classList.toggle('hidden', !vehicle.trim);
+  $('#photo-trim').value = vehicle.trim || '';
+  $('#photo-options').open = false;
+  updateSaveButton();
   renderVehiclePhoto(vehicle);
   loadKnownIssues(vehicle);
-  $('#search-view').classList.add('hidden');
-  $('#car-view').classList.remove('hidden');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  showOnly('#car-view');
 }
 
 let catalogTimer;
-searchInput.addEventListener('input', () => {
+function updateSearchSuggestions() {
   selectedVehicle = null;
   activeIndex = -1;
   renderSuggestions();
   clearTimeout(catalogTimer);
-  catalogTimer = setTimeout(() => augmentCatalog(searchInput.value), 250);
+  catalogTimer = setTimeout(() => augmentCatalog(searchInput.value, yearSelect.value), 250);
+}
+
+searchInput.addEventListener('input', () => {
+  const leadingYear = /^\s*(\d{4})(?:[\s,]+|$)/.exec(searchInput.value);
+  if (leadingYear && Number(leadingYear[1]) >= 1886 && Number(leadingYear[1]) <= latestYear) {
+    yearSelect.value = leadingYear[1];
+    searchInput.value = searchInput.value.slice(leadingYear[0].length);
+  }
+  updateSearchSuggestions();
 });
+yearSelect.addEventListener('change', updateSearchSuggestions);
 searchInput.addEventListener('focus', renderSuggestions);
 searchInput.addEventListener('keydown', event => {
   if (event.key === 'ArrowDown' && matches.length) { event.preventDefault(); activeIndex = Math.min(activeIndex + 1, matches.length - 1); renderSuggestions(); }
@@ -412,23 +584,61 @@ $('#vehicle-form').addEventListener('submit', (e) => {
   if (best) chooseVehicle(best); else searchInput.focus();
 });
 
-$$('.quick-searches button').forEach(button => button.addEventListener('click', () => {
-  searchInput.value = button.textContent;
-  matches = findMatches(button.textContent);
-  if (matches[0]) chooseVehicle(matches[0]);
-}));
-
-$('#back-btn').addEventListener('click', () => {
-  $('#car-view').classList.add('hidden');
-  $('#search-view').classList.remove('hidden');
+$('#photo-variant-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!selectedVehicle) return;
+  const trim = $('#photo-trim').value.trim();
+  if (trim === (selectedVehicle.trim || '')) return;
+  chooseVehicle({ ...selectedVehicle, trim });
+  $('#photo-options summary').focus();
 });
 
-$$('.tab').forEach(tab => tab.addEventListener('click', () => {
-  $$('.tab').forEach(t => t.classList.remove('active'));
-  tab.classList.add('active');
-  $('#diagnose-panel').classList.toggle('hidden', tab.dataset.tab !== 'diagnose');
-  $('#known-panel').classList.toggle('hidden', tab.dataset.tab !== 'known');
-}));
+renderRecentSearches();
+renderSavedVehicles();
+
+$('#save-vehicle').addEventListener('click', () => {
+  if (!selectedVehicle) return;
+  if (isVehicleSaved(selectedVehicle)) removeSavedVehicle(selectedVehicle);
+  else storeSavedVehicles([vehicleRecord(selectedVehicle), ...savedVehicles]);
+});
+
+window.addEventListener('storage', event => {
+  if (event.key !== savedVehiclesKey) return;
+  savedVehicles = lookupCache.read(savedVehiclesKey, []);
+  renderSavedVehicles();
+  updateSaveButton();
+});
+
+$('#back-btn').addEventListener('click', () => showOnly('#search-view'));
+
+const vehicleTabs = [...$$('#car-view .tab')];
+
+function activateVehicleTab(selectedTab) {
+  for (const tab of vehicleTabs) {
+    const active = tab === selectedTab;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    document.getElementById(tab.getAttribute('aria-controls')).classList.toggle('hidden', !active);
+  }
+}
+
+vehicleTabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => activateVehicleTab(tab));
+  tab.addEventListener('keydown', event => {
+    const destinations = {
+      ArrowLeft: (index - 1 + vehicleTabs.length) % vehicleTabs.length,
+      ArrowRight: (index + 1) % vehicleTabs.length,
+      Home: 0,
+      End: vehicleTabs.length - 1
+    };
+    if (!Object.hasOwn(destinations, event.key)) return;
+    event.preventDefault();
+    const nextTab = vehicleTabs[destinations[event.key]];
+    activateVehicleTab(nextTab);
+    nextTab.focus();
+  });
+});
 
 $('#translate-issues').addEventListener('click', () => {
   const panel = $('#known-panel');
@@ -673,8 +883,21 @@ async function loadProviders() {
   $('#remove-provider').classList.toggle('hidden', !connection);
 }
 
-$('#profile-btn').addEventListener('click', async () => { showOnly('#profile-view'); await loadProfile(); });
-$('#profile-back').addEventListener('click', () => showOnly(selectedVehicle ? '#car-view' : '#search-view'));
+let profileReturnView = '#search-view';
+
+function openProfile(returnView, backLabel) {
+  profileReturnView = returnView;
+  $('#profile-back-label').textContent = backLabel;
+  showOnly('#profile-view');
+  loadProfile();
+}
+
+$('#profile-btn').addEventListener('click', () => openProfile('#search-view', 'Back to search'));
+$('#vehicle-profile-btn').addEventListener('click', () => openProfile('#car-view', 'Back to vehicle'));
+$('#profile-back').addEventListener('click', () => {
+  showOnly(profileReturnView);
+  $(profileReturnView === '#car-view' ? '#vehicle-profile-btn' : '#profile-btn').focus();
+});
 $('#auth-form').addEventListener('submit', event => { event.preventDefault(); authRequest('token?grant_type=password'); });
 $('#sign-up').addEventListener('click', () => authRequest('signup'));
 $('#sign-out').addEventListener('click', async () => {

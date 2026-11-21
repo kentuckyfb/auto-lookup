@@ -3,6 +3,13 @@ const crypto = require('node:crypto');
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ANON_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
+const lookupCache = new Map();
+
+function rememberLookup(key, record) {
+  lookupCache.delete(key);
+  lookupCache.set(key, record);
+  if (lookupCache.size > 128) lookupCache.delete(lookupCache.keys().next().value);
+}
 
 function json(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -67,12 +74,21 @@ async function getProviderKey(userId, provider = 'carsxe') {
 }
 
 async function readCache(cacheKey) {
+  const local = lookupCache.get(cacheKey);
+  if (local && Date.parse(local.expires_at) > Date.now()) {
+    rememberLookup(cacheKey, local);
+    return local;
+  }
+  lookupCache.delete(cacheKey);
   if (!databaseReady()) return null;
   const rows = await supabase(`vehicle_cache?select=payload,source,expires_at&cache_key=eq.${encodeURIComponent(cacheKey)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&limit=1`);
-  return rows?.[0] || null;
+  const record = rows?.[0];
+  if (record) rememberLookup(cacheKey, record);
+  return record || null;
 }
 
 async function writeCache(record) {
+  rememberLookup(record.cache_key, { payload: record.payload, source: record.source, expires_at: record.expires_at });
   if (!databaseReady()) return;
   await supabase('vehicle_cache?on_conflict=cache_key', {
     method: 'POST',
