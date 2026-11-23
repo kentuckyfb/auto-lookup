@@ -55,20 +55,6 @@
             <p class="form-status" id="auth-status" role="status"></p>
           </form>
 
-          <div class="provider-form hidden" id="provider-form">
-            <form class="provider-connection" data-provider="openai">
-              <div class="provider-row"><div><strong>OpenAI</strong><span id="openai-state">Not connected</span></div><span class="connection-dot" id="openai-dot"></span></div>
-              <label>API key<input id="openai-key" type="password" autocomplete="off" placeholder="Paste an OpenAI API key" /></label>
-              <div class="profile-actions"><button class="solid-button" type="submit">Connect</button><button class="text-button remove-provider hidden" data-provider="openai" type="button">Remove</button></div>
-              <p class="form-status" id="openai-status" role="status">Used for guided diagnosis. Encrypted before storage.</p>
-            </form>
-            <form class="provider-connection" data-provider="carsxe">
-              <div class="provider-row"><div><strong>CarsXE</strong><span id="carsxe-state">Not connected</span></div><span class="connection-dot" id="carsxe-dot"></span></div>
-              <label>API key<input id="carsxe-key" type="password" autocomplete="off" placeholder="Paste a CarsXE API key" /></label>
-              <div class="profile-actions"><button class="solid-button" type="submit">Connect</button><button class="text-button remove-provider hidden" data-provider="carsxe" type="button">Remove</button></div>
-              <p class="form-status" id="carsxe-status" role="status">Used for vehicle data. Encrypted before storage.</p>
-            </form>
-          </div>
         </section>
       </div>
     </section>
@@ -139,13 +125,16 @@
                 <span class="result-label">Most likely area</span>
                 <h3 id="result-title"></h3>
                 <p id="result-explanation"></p>
+                <div class="likely-causes" id="result-causes"></div>
                 <div class="diagnosis-columns">
                   <section><span>Affected parts</span><ul id="result-parts"></ul></section>
                   <section><span>Check first</span><ul id="result-checks"></ul></section>
                 </div>
                 <div class="action-row"><div><span>Typical action</span><strong id="result-action"></strong></div><div><span>Urgency</span><strong id="result-urgency"></strong></div></div>
+                <div class="action-row"><div><span>When to act</span><strong id="result-timeframe"></strong></div><div><span>Replace only when</span><strong id="result-replacement"></strong></div></div>
                 <div class="garage-note"><strong>What to ask the garage</strong><p>“Can you show me the remaining pad thickness and rotor measurement before replacing anything?”</p></div>
                 <small class="disclaimer" id="result-safety"></small>
+                <div class="result-sources hidden" id="result-sources"><span>Sources</span><ul></ul></div>
               </div>
             </div>
           </div>

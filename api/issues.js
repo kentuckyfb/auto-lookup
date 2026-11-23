@@ -1,4 +1,4 @@
-const { json, currentUser, getProviderKey, readCache, writeCache } = require('./_lib/data');
+const { json, readCache, writeCache } = require('./_lib/data');
 
 const value = input => String(input || '').trim();
 const slug = input => value(input).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -176,17 +176,14 @@ module.exports = async function handler(req, res) {
   const make = value(req.query.make);
   const model = value(req.query.model);
   if (!/^\d{4}$/.test(year) || !make || !model) return json(res, 400, { error: 'year, make and model are required' });
-  const providerScope = process.env.CARSXE_API_KEY || req.headers.authorization ? 'provider' : 'public';
+  const providerScope = process.env.CARSXE_API_KEY ? 'provider' : 'public';
   const cacheKey = `issues:v6:${providerScope}:${year}:${slug(make)}:${slug(model)}`;
   try {
     const cached = await readCache(cacheKey);
     if (cached) return json(res, 200, { ...cached.payload, cache: 'hit', expiresAt: cached.expires_at });
   } catch (_) {}
 
-  const user = await currentUser(req).catch(() => null);
-  let providerKey = null;
-  try { providerKey = await getProviderKey(user?.id); } catch (_) {}
-  providerKey ||= process.env.CARSXE_API_KEY;
+  const providerKey = process.env.CARSXE_API_KEY;
   const [publicRecalls, complaints, providerRecalls, japanRecords] = await Promise.allSettled([
     nhtsa('recalls', year, make, model),
     nhtsa('complaints', year, make, model),

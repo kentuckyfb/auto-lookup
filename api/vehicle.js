@@ -1,4 +1,4 @@
-const { json, currentUser, getProviderKey, readCache, writeCache } = require('./_lib/data');
+const { json, readCache, writeCache } = require('./_lib/data');
 const { commonsPhotos } = require('./_lib/commons-photos');
 
 const clean = value => String(value || '').trim();
@@ -25,17 +25,15 @@ module.exports = async function handler(req, res) {
     return json(res, 400, { error: 'A valid year, make and model are required' });
   }
 
-  const canUseCarsxe = Boolean(process.env.CARSXE_API_KEY || req.headers.authorization);
+  const canUseCarsxe = Boolean(process.env.CARSXE_API_KEY);
   const cacheKey = `vehicle:v2:${photoOnly ? 'photo' : 'details'}:${canUseCarsxe ? 'provider' : 'public'}:${year}:${slug(make)}:${slug(model)}:${encodeURIComponent(trim.toLowerCase())}`;
   try {
     const cached = await readCache(cacheKey);
     if (cached) return json(res, 200, { ...cached.payload, cache: 'hit', source: cached.source, expiresAt: cached.expires_at });
   } catch (_) { /* The provider can still serve the request if the cache is unavailable. */ }
 
-  const user = await currentUser(req).catch(() => null);
-  let key = await getProviderKey(user?.id).catch(() => null);
-  const keySource = key ? 'user' : 'global';
-  key ||= process.env.CARSXE_API_KEY;
+  const key = process.env.CARSXE_API_KEY;
+  const keySource = 'global';
 
   try {
     const variant = trim ? { trim } : {};

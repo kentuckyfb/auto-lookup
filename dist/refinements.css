@@ -192,9 +192,9 @@ html:has(#car-view:not(.hidden)){scrollbar-gutter:stable both-edges}
 
 .profile-title{margin-top:12px}
 .profile-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:28px clamp(24px,3vw,40px);margin-top:24px}
-.profile-heading,.provider-row,.profile-actions{display:flex;align-items:center;gap:12px}
-.profile-heading,.provider-row{justify-content:space-between}
-.profile-note,.provider-row span,.form-status{color:var(--workspace-muted);font-size:13px;line-height:1.5}
+.profile-heading,.profile-actions{display:flex;align-items:center;gap:12px}
+.profile-heading{justify-content:space-between}
+.profile-note,.form-status{color:var(--workspace-muted);font-size:13px;line-height:1.5}
 .profile-note{margin:10px 0 0;overflow-wrap:anywhere}
 .saved-vehicles{display:grid;gap:8px;margin:14px 0 0;padding:0;list-style:none}
 .saved-vehicles:empty{margin:0}
@@ -202,19 +202,15 @@ html:has(#car-view:not(.hidden)){scrollbar-gutter:stable both-edges}
 .saved-vehicle-open{flex:1;min-width:0;padding:12px 0;border:0;border-radius:0;background:none;color:var(--ink);text-align:left;font:650 15px/1.4 'DM Sans',sans-serif;overflow-wrap:anywhere;cursor:pointer}
 .saved-vehicle-open:hover{color:var(--green);text-decoration:underline;text-underline-offset:3px}
 .saved-vehicle-remove{flex:none}
-.profile-form,.provider-form{display:grid;gap:14px;margin-top:16px}
-.provider-form{gap:0}
-.provider-connection{display:grid;gap:14px;padding:16px 0;border-bottom:1px solid #aab7ae}.provider-connection:first-child{padding-top:0}.provider-connection:last-child{padding-bottom:0;border-bottom:0}
-.profile-form label,.provider-form label{display:grid;gap:6px;color:var(--ink);font-size:13px;font-weight:650}
-.profile-form input,.provider-form input{width:100%;min-height:42px;padding:8px 12px;border:1px solid #aab7ae;border-radius:0;background:#fdfdfa;color:var(--ink);font:500 14px 'DM Sans',sans-serif}
+.profile-form{display:grid;gap:14px;margin-top:16px}
+.profile-form label{display:grid;gap:6px;color:var(--ink);font-size:13px;font-weight:650}
+.profile-form input{width:100%;min-height:42px;padding:8px 12px;border:1px solid #aab7ae;border-radius:0;background:#fdfdfa;color:var(--ink);font:500 14px 'DM Sans',sans-serif}
 .profile-actions{flex-wrap:wrap}
 .solid-button,.text-button{min-height:34px;border:0;border-radius:0;background:none;color:var(--green);font:650 13px 'DM Sans',sans-serif;cursor:pointer}
 .solid-button{min-height:42px;padding:0 14px;background:var(--green);color:#fff}
 .solid-button:hover{background:#245346}
 .text-button{padding:0;text-underline-offset:3px}
 .text-button:hover{text-decoration:underline}
-.provider-row strong,.provider-row span{display:block}
-.provider-row strong{font-size:14px}
 .connection-dot{width:7px;height:7px;background:#aab7ae}
 .connection-dot.connected{background:#4d8a72}
 .form-status{margin:0}
@@ -239,6 +235,13 @@ html:has(#car-view:not(.hidden)){scrollbar-gutter:stable both-edges}
 .diagnosis-columns span,.action-row span{font-weight:650;color:var(--ink)}
 .diagnosis-columns ul{margin:0;padding-left:16px}
 .diagnosis-columns li,.action-row strong{color:#394b43;font-size:13px;line-height:1.5}
+.likely-causes{display:grid;gap:0;margin-top:18px;border-top:1px solid var(--workspace-edge)}
+.likely-causes article{display:grid;grid-template-columns:1fr auto;gap:3px 14px;padding:13px 0;border-bottom:1px solid var(--workspace-edge)}
+.likely-causes strong{font-size:13px}.likely-causes span{color:var(--workspace-muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.likely-causes p{grid-column:1/-1;margin:0;color:#526159;font-size:12px;line-height:1.5}
+.result-sources{padding-top:14px;border-top:1px solid var(--workspace-edge);margin-top:14px}
+.result-sources>span{font-size:11px;font-weight:650}.result-sources ul{display:flex;gap:7px 16px;flex-wrap:wrap;margin:8px 0 0;padding:0;list-style:none}
+.result-sources a{color:var(--green);font-size:11px;text-underline-offset:3px}
 .garage-note{margin:0 0 12px;border:0;border-top:1px solid var(--workspace-edge);background:none;padding:14px 0 0}
 .garage-note strong{font-size:12px}
 .garage-note p{font-size:13px;line-height:1.5;margin:4px 0 0}
@@ -324,9 +327,9 @@ html:has(#car-view:not(.hidden)){scrollbar-gutter:stable both-edges}
     --vehicle-tab-height:36px;
   }
   .tab{padding-top:8px}
-  .year-select,.diagnosis-input,.photo-variant input,.profile-form input,.provider-form input{font-size:16px}
+  .year-select,.diagnosis-input,.photo-variant input,.profile-form input{font-size:16px}
   .quick-searches button,.photo-options summary,.photo-variant input,.photo-variant button,
-  .profile-form input,.provider-form input,.profile-view .solid-button,.profile-view .text-button{min-height:44px}
+  .profile-form input,.profile-view .solid-button,.profile-view .text-button{min-height:44px}
   .examples button{min-height:36px}
 }
 

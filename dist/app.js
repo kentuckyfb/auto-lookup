@@ -671,6 +671,7 @@ $$('.examples button').forEach(button => button.addEventListener('click', () => 
 }));
 
 let diagnosisHistory = [];
+let diagnosisQuestionId = '';
 
 function fillList(selector, items) {
   const list = $(selector);
@@ -688,19 +689,48 @@ function renderDiagnosisResult(diagnosis) {
   $('#choices').innerHTML = '';
   $('#result-title').textContent = diagnosis.title;
   $('#result-explanation').textContent = diagnosis.explanation;
-  fillList('#result-parts', diagnosis.parts);
-  fillList('#result-checks', diagnosis.checks);
+  fillList('#result-parts', diagnosis.parts || []);
+  fillList('#result-checks', diagnosis.checks || []);
   $('#result-action').textContent = diagnosis.action;
   $('#result-urgency').textContent = diagnosis.urgency;
+  $('#result-timeframe').textContent = diagnosis.timeframe || 'Ask the garage after inspection';
+  $('#result-replacement').textContent = diagnosis.replacementAdvice || 'Only after testing confirms failure';
+  const causes = $('#result-causes');
+  causes.innerHTML = '';
+  (diagnosis.likelyProblems || []).forEach(item => {
+    const article = document.createElement('article');
+    const heading = document.createElement('strong');
+    const likelihood = document.createElement('span');
+    const reason = document.createElement('p');
+    heading.textContent = item.name;
+    likelihood.textContent = item.likelihood;
+    reason.textContent = item.reason;
+    article.append(heading, likelihood, reason);
+    causes.appendChild(article);
+  });
   $('#result .garage-note p').textContent = `“${diagnosis.garageQuestion}”`;
-  $('#result-safety').textContent = `Guidance only—not a confirmed diagnosis. ${diagnosis.safety}`;
+  $('#result-safety').textContent = `Guidance only—not a confirmed diagnosis. ${diagnosis.safety}${diagnosis.limitations ? ` ${diagnosis.limitations}` : ''}`;
+  const sources = $('#result-sources');
+  const sourceList = sources.querySelector('ul');
+  sourceList.innerHTML = '';
+  (diagnosis.sources || []).forEach(source => {
+    const li = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = source.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = source.title;
+    li.appendChild(link);
+    sourceList.appendChild(li);
+  });
+  sources.classList.toggle('hidden', !sourceList.children.length);
   $('#result').classList.remove('hidden');
 }
 
 async function requestDiagnosis(choice) {
   const problem = $('#user-message').textContent;
   const choices = $('#choices');
-  if (choice) diagnosisHistory.push({ question: $('#assistant-question').textContent, answer: choice.label });
+  if (choice) diagnosisHistory.push({ questionId: diagnosisQuestionId, question: $('#assistant-question').textContent, answer: choice.label });
   choices.innerHTML = '<span class="diagnosis-loading">Checking...</span>';
   try {
     const response = await fetch('/api/diagnose', {
@@ -719,16 +749,10 @@ async function requestDiagnosis(choice) {
       $('#assistant-question').textContent = data.error || 'Could not assess this symptom.';
       choices.innerHTML = '';
       $('#custom-answer').classList.add('hidden');
-      if (data.code === 'AI_PROVIDER_REQUIRED') {
-        const connect = document.createElement('button');
-        connect.type = 'button';
-        connect.textContent = 'Connect an AI key';
-        connect.addEventListener('click', async () => { showOnly('#profile-view'); await loadProfile(); });
-        choices.appendChild(connect);
-      }
       return;
     }
     if (data.stage === 'result') return renderDiagnosisResult(data.diagnosis);
+    diagnosisQuestionId = data.questionId || '';
     $('#assistant-question').textContent = data.question;
     $('#custom-answer').classList.remove('hidden');
     choices.innerHTML = '';
@@ -750,6 +774,7 @@ function startDiagnosis() {
   const text = $('#problem-input').value.trim();
   if (!text) { $('#problem-input').focus(); return; }
   diagnosisHistory = [];
+  diagnosisQuestionId = '';
   $('#user-message').textContent = text;
   $('#follow-up').classList.remove('hidden');
   $('#result').classList.add('hidden');
@@ -776,6 +801,7 @@ $('#custom-answer').addEventListener('submit', event => {
 
 $('#restart-diagnosis').addEventListener('click', () => {
   diagnosisHistory = [];
+  diagnosisQuestionId = '';
   $('#problem-input').value = '';
   $('#chat-panel').classList.add('hidden');
   $('#diagnosis-intro').classList.remove('hidden');
@@ -840,9 +866,8 @@ function showOnly(view) {
 
 function renderSignedOut() {
   authStore.user = null;
-  $('#profile-state').textContent = 'Sign in to use your own data providers.';
+  $('#profile-state').textContent = 'Sign in to keep your saved vehicles.';
   $('#auth-form').classList.remove('hidden');
-  $('#provider-form').classList.add('hidden');
   $('#sign-out').classList.add('hidden');
 }
 
@@ -867,13 +892,10 @@ async function loadProfile() {
     authStore.user = await userResponse.json();
     state.textContent = authStore.user.email;
     $('#auth-form').classList.add('hidden');
-    $('#provider-form').classList.remove('hidden');
     $('#sign-out').classList.remove('hidden');
-    await loadProviders();
   } catch (error) {
     state.textContent = error.message;
     $('#auth-form').classList.add('hidden');
-    $('#provider-form').classList.add('hidden');
     $('#sign-out').classList.add('hidden');
   }
 }
@@ -898,17 +920,6 @@ async function authRequest(action) {
   saveSession(data);
   status.textContent = '';
   await loadProfile();
-}
-
-async function loadProviders() {
-  const response = await fetch('/api/providers', { headers: { Authorization: `Bearer ${authStore.token}` } });
-  const data = await response.json();
-  ['openai', 'carsxe'].forEach(provider => {
-    const connection = data.connections?.find(item => item.provider === provider);
-    $(`#${provider}-state`).textContent = connection ? `Connected · ending ${connection.key_hint}` : 'Not connected';
-    $(`#${provider}-dot`).classList.toggle('connected', Boolean(connection));
-    $(`.remove-provider[data-provider="${provider}"]`).classList.toggle('hidden', !connection);
-  });
 }
 
 let profileReturnView = '#search-view';
@@ -938,30 +949,4 @@ $('#sign-out').addEventListener('click', async () => {
   clearSession();
   renderSignedOut();
 });
-$$('.provider-connection').forEach(form => form.addEventListener('submit', async event => {
-  event.preventDefault();
-  const provider = form.dataset.provider;
-  const input = $(`#${provider}-key`);
-  const status = $(`#${provider}-status`);
-  const key = input.value.trim();
-  if (!key) return input.focus();
-  status.textContent = 'Checking key...';
-  const response = await fetch('/api/providers', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${authStore.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, key })
-  });
-  const data = await response.json();
-  if (!response.ok) { status.textContent = data.error || 'Could not save key'; return; }
-  input.value = '';
-  status.textContent = 'Connected.';
-  await loadProviders();
-}));
-$$('.remove-provider').forEach(button => button.addEventListener('click', async () => {
-  const provider = button.dataset.provider;
-  await fetch(`/api/providers?provider=${encodeURIComponent(provider)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authStore.token}` } });
-  $(`#${provider}-status`).textContent = 'Connection removed.';
-  await loadProviders();
-}));
-
 if (captureAuthCallback()) loadProfile();
