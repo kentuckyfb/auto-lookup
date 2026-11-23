@@ -689,15 +689,16 @@ function renderDiagnosisResult(diagnosis) {
   $('#choices').innerHTML = '';
   $('#result-title').textContent = diagnosis.title;
   $('#result-explanation').textContent = diagnosis.explanation;
-  fillList('#result-parts', diagnosis.parts || []);
-  fillList('#result-checks', diagnosis.checks || []);
+  fillList('#result-parts', (diagnosis.parts || []).slice(0, 4));
+  fillList('#result-checks', (diagnosis.checks || []).slice(0, 3));
   $('#result-action').textContent = diagnosis.action;
   $('#result-urgency').textContent = diagnosis.urgency;
+  $('#result-urgency').dataset.level = String(diagnosis.urgency || 'low').toLowerCase().replace(/\s+/g, '-');
   $('#result-timeframe').textContent = diagnosis.timeframe || 'Ask the garage after inspection';
   $('#result-replacement').textContent = diagnosis.replacementAdvice || 'Only after testing confirms failure';
   const causes = $('#result-causes');
   causes.innerHTML = '';
-  (diagnosis.likelyProblems || []).forEach(item => {
+  (diagnosis.likelyProblems || []).slice(0, 2).forEach(item => {
     const article = document.createElement('article');
     const heading = document.createElement('strong');
     const likelihood = document.createElement('span');
@@ -709,21 +710,7 @@ function renderDiagnosisResult(diagnosis) {
     causes.appendChild(article);
   });
   $('#result .garage-note p').textContent = `“${diagnosis.garageQuestion}”`;
-  $('#result-safety').textContent = `Guidance only—not a confirmed diagnosis. ${diagnosis.safety}${diagnosis.limitations ? ` ${diagnosis.limitations}` : ''}`;
-  const sources = $('#result-sources');
-  const sourceList = sources.querySelector('ul');
-  sourceList.innerHTML = '';
-  (diagnosis.sources || []).forEach(source => {
-    const li = document.createElement('li');
-    const link = document.createElement('a');
-    link.href = source.url;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.textContent = source.title;
-    li.appendChild(link);
-    sourceList.appendChild(li);
-  });
-  sources.classList.toggle('hidden', !sourceList.children.length);
+  $('#result-safety').textContent = diagnosis.safety;
   $('#result').classList.remove('hidden');
 }
 

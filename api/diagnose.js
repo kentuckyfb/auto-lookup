@@ -87,7 +87,7 @@ Return exactly one of these:
 
 1. A useful follow-up question when one observable answer would materially narrow the affected system. Ask only about location, timing, operating condition, warning lights, smell, temperature, vibration, fluid, or a safety change. Provide 2-5 plain choices. Use a stable descriptive questionId. Never repeat or rephrase any previous question. For this stage, set diagnosis to ${JSON.stringify(emptyDiagnosis)}.
 
-2. A result when the information is sufficient or four questions have already been answered. Set questionId and question to empty strings and choices to an empty array. Give 1-3 likely problems ordered by fit, specific affected parts, 2-5 checks a garage should perform before replacement, the typical first repair action, when replacement is justified, a plain timeframe, urgency, direct driving-safety guidance, danger signs, and one precise question for the garage.
+2. A result when the information is sufficient or four questions have already been answered. Set questionId and question to empty strings and choices to an empty array. Give only 1-2 likely problems, 2-4 affected parts, and 2-3 checks before replacement. Keep the explanation under 35 words; each cause reason under 18 words; each check under 12 words; action and replacement advice under 22 words; timeframe under 10 words; safety guidance under 30 words; and the garage question under 20 words.
 
 Use stage "result" immediately for urgent safety symptoms. Keep every field concise and readable. This is guidance, not a confirmed diagnosis.`;
 }
@@ -173,10 +173,11 @@ module.exports = async function handler(req, res) {
     }
     if (!validDiagnosis(result)) throw new Error('The structured diagnosis was incomplete.');
     const diagnosis = result.diagnosis;
-    const safety = `${diagnosis.safeToDrive}${diagnosis.stopDrivingIf?.length ? ` Stop driving if: ${diagnosis.stopDrivingIf.join('; ')}.` : ''}`;
+    const dangerSigns = (diagnosis.stopDrivingIf || []).slice(0, 2);
+    const safety = `${diagnosis.safeToDrive}${dangerSigns.length ? ` Stop if: ${dangerSigns.join('; ')}.` : ''}`;
     return json(res, 200, { stage: 'result', diagnosis: {
-      title: diagnosis.title, explanation: diagnosis.explanation, likelyProblems: diagnosis.likelyProblems,
-      parts: diagnosis.affectedParts.slice(0, 8), checks: diagnosis.checks.slice(0, 8),
+      title: diagnosis.title, explanation: diagnosis.explanation, likelyProblems: diagnosis.likelyProblems.slice(0, 2),
+      parts: diagnosis.affectedParts.slice(0, 4), checks: diagnosis.checks.slice(0, 3),
       action: diagnosis.repairRecommendation, replacementAdvice: diagnosis.replacementAdvice,
       timeframe: diagnosis.timeframe, urgency: diagnosis.urgency, garageQuestion: diagnosis.garageQuestion,
       safety, limitations: diagnosis.limitations, sources: []

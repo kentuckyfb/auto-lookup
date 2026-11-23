@@ -122,19 +122,22 @@
               <div class="choices" id="choices"></div>
               <form class="custom-answer hidden" id="custom-answer"><input id="custom-answer-input" type="text" maxlength="300" placeholder="Or describe what happens" /><button type="submit" aria-label="Send answer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button></form>
               <div class="result hidden" id="result">
-                <span class="result-label">Most likely area</span>
-                <h3 id="result-title"></h3>
+                <div class="result-heading">
+                  <span class="result-heading-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m14.7 6.3 3-3a4.2 4.2 0 0 1-5.4 5.4l-6.6 6.6a2.1 2.1 0 0 0 3 3l6.6-6.6a4.2 4.2 0 0 1 5.4-5.4l-3 3"/></svg></span>
+                  <div><span class="result-label">Assessment</span><h3 id="result-title"></h3></div>
+                </div>
                 <p id="result-explanation"></p>
+                <div class="result-pills"><span class="urgency-pill" id="result-urgency"></span><span class="time-pill"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg><span id="result-timeframe"></span></span></div>
+                <h4 class="result-section-title">Likely causes</h4>
                 <div class="likely-causes" id="result-causes"></div>
                 <div class="diagnosis-columns">
-                  <section><span>Affected parts</span><ul id="result-parts"></ul></section>
-                  <section><span>Check first</span><ul id="result-checks"></ul></section>
+                  <section class="parts-card"><div class="result-card-title"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="5"/></svg><span>Parts involved</span></div><ul id="result-parts"></ul></section>
+                  <section class="checks-card"><div class="result-card-title"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><span>Check first</span></div><ul id="result-checks"></ul></section>
                 </div>
-                <div class="action-row"><div><span>Typical action</span><strong id="result-action"></strong></div><div><span>Urgency</span><strong id="result-urgency"></strong></div></div>
-                <div class="action-row"><div><span>When to act</span><strong id="result-timeframe"></strong></div><div><span>Replace only when</span><strong id="result-replacement"></strong></div></div>
-                <div class="garage-note"><strong>What to ask the garage</strong><p>“Can you show me the remaining pad thickness and rotor measurement before replacing anything?”</p></div>
-                <small class="disclaimer" id="result-safety"></small>
-                <div class="result-sources hidden" id="result-sources"><span>Sources</span><ul></ul></div>
+                <div class="next-step"><span class="next-step-icon" aria-hidden="true">→</span><div><span>Next step</span><strong id="result-action"></strong></div></div>
+                <details class="replacement-note"><summary>When should a part be replaced?</summary><p id="result-replacement"></p></details>
+                <div class="garage-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v10H9l-4 4Z"/></svg><div><strong>Ask the garage</strong><p>“Can you show me the remaining pad thickness and rotor measurement before replacing anything?”</p></div></div>
+                <div class="safety-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.3 8.3-8 10-4.7-1.7-8-5-8-10V6Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg><span id="result-safety"></span></div>
               </div>
             </div>
           </div>
