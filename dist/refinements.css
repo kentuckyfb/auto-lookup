@@ -203,6 +203,8 @@ html:has(#car-view:not(.hidden)){scrollbar-gutter:stable both-edges}
 .saved-vehicle-open:hover{color:var(--green);text-decoration:underline;text-underline-offset:3px}
 .saved-vehicle-remove{flex:none}
 .profile-form,.provider-form{display:grid;gap:14px;margin-top:16px}
+.provider-form{gap:0}
+.provider-connection{display:grid;gap:14px;padding:16px 0;border-bottom:1px solid #aab7ae}.provider-connection:first-child{padding-top:0}.provider-connection:last-child{padding-bottom:0;border-bottom:0}
 .profile-form label,.provider-form label{display:grid;gap:6px;color:var(--ink);font-size:13px;font-weight:650}
 .profile-form input,.provider-form input{width:100%;min-height:42px;padding:8px 12px;border:1px solid #aab7ae;border-radius:0;background:#fdfdfa;color:var(--ink);font:500 14px 'DM Sans',sans-serif}
 .profile-actions{flex-wrap:wrap}
@@ -229,6 +231,7 @@ html:has(#car-view:not(.hidden)){scrollbar-gutter:stable both-edges}
 .choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px;margin:0 0 22px}
 .choices button{border:0;border-bottom:1px solid #aab7ae;border-radius:0;background:none;color:var(--green);padding:10px 0;text-align:left;font:600 13px 'DM Sans',sans-serif;cursor:pointer;text-underline-offset:3px}
 .choices button:hover{text-decoration:underline}
+.custom-answer{display:flex;align-items:center;gap:12px;margin:-10px 0 22px}.custom-answer input{flex:1;min-width:0;min-height:42px;border:0;border-bottom:1px solid #aab7ae;border-radius:0;background:none;padding:8px 0;color:var(--ink);font:500 13px 'DM Sans',sans-serif;outline:none}.custom-answer input:focus{border-color:var(--green)}.custom-answer button{display:grid;place-items:center;width:42px;height:42px;flex:none;border:0;border-radius:0;background:var(--green);color:#fff;cursor:pointer}.custom-answer svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .diagnosis-loading{color:#7d8985;font-size:12px;padding:8px 0}
 .result{border-top:1px solid var(--workspace-edge);padding:18px 0 0}
 .result>h3{font:600 25px/1.25 Manrope;letter-spacing:-.035em;margin:0 0 9px}.result>p{color:#394b43;font-size:14px;line-height:1.6;margin:0 0 18px}

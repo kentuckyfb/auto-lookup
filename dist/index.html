@@ -55,12 +55,20 @@
             <p class="form-status" id="auth-status" role="status"></p>
           </form>
 
-          <form class="provider-form hidden" id="provider-form">
-            <div class="provider-row"><div><strong>CarsXE</strong><span id="provider-state">Not connected</span></div><span class="connection-dot" id="provider-dot"></span></div>
-            <label>API key<input id="provider-key" type="password" autocomplete="off" placeholder="Paste a CarsXE API key" /></label>
-            <div class="profile-actions"><button class="solid-button" type="submit">Save key</button><button class="text-button hidden" id="remove-provider" type="button">Remove</button></div>
-            <p class="form-status" id="provider-status" role="status">Encrypted before it is stored. It is never sent to the browser again.</p>
-          </form>
+          <div class="provider-form hidden" id="provider-form">
+            <form class="provider-connection" data-provider="openai">
+              <div class="provider-row"><div><strong>OpenAI</strong><span id="openai-state">Not connected</span></div><span class="connection-dot" id="openai-dot"></span></div>
+              <label>API key<input id="openai-key" type="password" autocomplete="off" placeholder="Paste an OpenAI API key" /></label>
+              <div class="profile-actions"><button class="solid-button" type="submit">Connect</button><button class="text-button remove-provider hidden" data-provider="openai" type="button">Remove</button></div>
+              <p class="form-status" id="openai-status" role="status">Used for guided diagnosis. Encrypted before storage.</p>
+            </form>
+            <form class="provider-connection" data-provider="carsxe">
+              <div class="provider-row"><div><strong>CarsXE</strong><span id="carsxe-state">Not connected</span></div><span class="connection-dot" id="carsxe-dot"></span></div>
+              <label>API key<input id="carsxe-key" type="password" autocomplete="off" placeholder="Paste a CarsXE API key" /></label>
+              <div class="profile-actions"><button class="solid-button" type="submit">Connect</button><button class="text-button remove-provider hidden" data-provider="carsxe" type="button">Remove</button></div>
+              <p class="form-status" id="carsxe-status" role="status">Used for vehicle data. Encrypted before storage.</p>
+            </form>
+          </div>
         </section>
       </div>
     </section>
@@ -126,6 +134,7 @@
               <div class="symptom-summary"><span>You noticed</span><strong id="user-message"></strong></div>
               <div class="follow-up" id="follow-up"><span>One useful question</span><h3 id="assistant-question">Checking your symptom...</h3></div>
               <div class="choices" id="choices"></div>
+              <form class="custom-answer hidden" id="custom-answer"><input id="custom-answer-input" type="text" maxlength="300" placeholder="Or describe what happens" /><button type="submit" aria-label="Send answer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button></form>
               <div class="result hidden" id="result">
                 <span class="result-label">Most likely area</span>
                 <h3 id="result-title"></h3>

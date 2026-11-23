@@ -65,6 +65,8 @@ The cache stores image references and source metadata. The Wagon R reference pho
 3. Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL editor.
 4. Add the project secrets in Vercel.
    - `CARSXE_API_KEY`
+   - `OPENAI_API_KEY` (optional global fallback; users can connect their own key in Profile)
+   - `OPENAI_MODEL` (optional, defaults to `gpt-4o-mini`)
    - `CREDENTIAL_ENCRYPTION_KEY` — a random value of at least 32 characters
 5. Confirm the Supabase integration added `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`.
 6. Open **Authentication → URL Configuration** in Supabase and configure the site and redirect URLs.
@@ -76,3 +78,4 @@ The cache stores image references and source metadata. The Wagon R reference pho
 The browser handles Supabase's confirmation fragment, stores the session, removes the tokens from the visible URL, and opens the signed-in profile. New signups explicitly request the current site origin as their confirmation destination, so that origin must be in Supabase's redirect allow list.
 
 User-provided CarsXE keys are verified once, encrypted with AES-256-GCM, and stored in `provider_connections`. Only their last four characters are returned to the browser.
+User-provided OpenAI keys use the same encrypted storage flow. Guided diagnosis sends the selected year, make, model, original symptom, and prior question/answer turns from the server to the OpenAI Responses API. The response is constrained to a strict JSON schema and validated again before display. API keys are never returned to the browser.

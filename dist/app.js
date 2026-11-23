@@ -670,7 +670,7 @@ $$('.examples button').forEach(button => button.addEventListener('click', () => 
   $('#problem-input').focus();
 }));
 
-let diagnosisCategory = null;
+let diagnosisHistory = [];
 
 function fillList(selector, items) {
   const list = $(selector);
@@ -684,6 +684,7 @@ function fillList(selector, items) {
 
 function renderDiagnosisResult(diagnosis) {
   $('#follow-up').classList.add('hidden');
+  $('#custom-answer').classList.add('hidden');
   $('#choices').innerHTML = '';
   $('#result-title').textContent = diagnosis.title;
   $('#result-explanation').textContent = diagnosis.explanation;
@@ -696,49 +697,63 @@ function renderDiagnosisResult(diagnosis) {
   $('#result').classList.remove('hidden');
 }
 
-async function requestDiagnosis(answer) {
+async function requestDiagnosis(choice) {
   const problem = $('#user-message').textContent;
   const choices = $('#choices');
+  if (choice) diagnosisHistory.push({ question: $('#assistant-question').textContent, answer: choice.label });
   choices.innerHTML = '<span class="diagnosis-loading">Checking...</span>';
   try {
     const response = await fetch('/api/diagnose', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(authStore?.token ? { Authorization: `Bearer ${authStore.token}` } : {}) },
       body: JSON.stringify({
         problem,
-        answer,
-        category: diagnosisCategory,
+        history: diagnosisHistory,
         year: selectedVehicle?.year,
         make: selectedVehicle?.make,
         model: selectedVehicle?.model
       })
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Could not assess this symptom.');
-    diagnosisCategory = data.category;
+    if (!response.ok) {
+      $('#assistant-question').textContent = data.error || 'Could not assess this symptom.';
+      choices.innerHTML = '';
+      $('#custom-answer').classList.add('hidden');
+      if (data.code === 'AI_PROVIDER_REQUIRED') {
+        const connect = document.createElement('button');
+        connect.type = 'button';
+        connect.textContent = 'Connect an AI key';
+        connect.addEventListener('click', async () => { showOnly('#profile-view'); await loadProfile(); });
+        choices.appendChild(connect);
+      }
+      return;
+    }
     if (data.stage === 'result') return renderDiagnosisResult(data.diagnosis);
     $('#assistant-question').textContent = data.question;
+    $('#custom-answer').classList.remove('hidden');
     choices.innerHTML = '';
     data.choices.forEach(choice => {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = choice.label;
-      button.addEventListener('click', () => requestDiagnosis(choice.id));
+      button.addEventListener('click', () => requestDiagnosis(choice));
       choices.appendChild(button);
     });
   } catch (error) {
     $('#assistant-question').textContent = error.message;
     choices.innerHTML = '';
+    $('#custom-answer').classList.add('hidden');
   }
 }
 
 function startDiagnosis() {
   const text = $('#problem-input').value.trim();
   if (!text) { $('#problem-input').focus(); return; }
-  diagnosisCategory = null;
+  diagnosisHistory = [];
   $('#user-message').textContent = text;
   $('#follow-up').classList.remove('hidden');
   $('#result').classList.add('hidden');
+  $('#custom-answer').classList.add('hidden');
   $('#diagnosis-intro').classList.add('hidden');
   $('#chat-panel').classList.remove('hidden');
   requestDiagnosis();
@@ -749,12 +764,23 @@ $('#problem-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startDiagnosis(); }
 });
 
+$('#custom-answer').addEventListener('submit', event => {
+  event.preventDefault();
+  const input = $('#custom-answer-input');
+  const label = input.value.trim();
+  if (!label) return input.focus();
+  input.value = '';
+  $('#custom-answer').classList.add('hidden');
+  requestDiagnosis({ id: 'custom', label });
+});
+
 $('#restart-diagnosis').addEventListener('click', () => {
-  diagnosisCategory = null;
+  diagnosisHistory = [];
   $('#problem-input').value = '';
   $('#chat-panel').classList.add('hidden');
   $('#diagnosis-intro').classList.remove('hidden');
   $('#result').classList.add('hidden');
+  $('#custom-answer').classList.add('hidden');
   $('#problem-input').focus();
 });
 
@@ -877,10 +903,12 @@ async function authRequest(action) {
 async function loadProviders() {
   const response = await fetch('/api/providers', { headers: { Authorization: `Bearer ${authStore.token}` } });
   const data = await response.json();
-  const connection = data.connections?.find(item => item.provider === 'carsxe');
-  $('#provider-state').textContent = connection ? `Connected · ending ${connection.key_hint}` : 'Not connected';
-  $('#provider-dot').classList.toggle('connected', Boolean(connection));
-  $('#remove-provider').classList.toggle('hidden', !connection);
+  ['openai', 'carsxe'].forEach(provider => {
+    const connection = data.connections?.find(item => item.provider === provider);
+    $(`#${provider}-state`).textContent = connection ? `Connected · ending ${connection.key_hint}` : 'Not connected';
+    $(`#${provider}-dot`).classList.toggle('connected', Boolean(connection));
+    $(`.remove-provider[data-provider="${provider}"]`).classList.toggle('hidden', !connection);
+  });
 }
 
 let profileReturnView = '#search-view';
@@ -910,27 +938,30 @@ $('#sign-out').addEventListener('click', async () => {
   clearSession();
   renderSignedOut();
 });
-$('#provider-form').addEventListener('submit', async event => {
+$$('.provider-connection').forEach(form => form.addEventListener('submit', async event => {
   event.preventDefault();
-  const key = $('#provider-key').value.trim();
-  const status = $('#provider-status');
-  if (!key) return $('#provider-key').focus();
+  const provider = form.dataset.provider;
+  const input = $(`#${provider}-key`);
+  const status = $(`#${provider}-status`);
+  const key = input.value.trim();
+  if (!key) return input.focus();
   status.textContent = 'Checking key...';
   const response = await fetch('/api/providers', {
     method: 'POST',
     headers: { Authorization: `Bearer ${authStore.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key })
+    body: JSON.stringify({ provider, key })
   });
   const data = await response.json();
   if (!response.ok) { status.textContent = data.error || 'Could not save key'; return; }
-  $('#provider-key').value = '';
+  input.value = '';
   status.textContent = 'Connected.';
   await loadProviders();
-});
-$('#remove-provider').addEventListener('click', async () => {
-  await fetch('/api/providers', { method: 'DELETE', headers: { Authorization: `Bearer ${authStore.token}` } });
-  $('#provider-status').textContent = 'Connection removed.';
+}));
+$$('.remove-provider').forEach(button => button.addEventListener('click', async () => {
+  const provider = button.dataset.provider;
+  await fetch(`/api/providers?provider=${encodeURIComponent(provider)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authStore.token}` } });
+  $(`#${provider}-status`).textContent = 'Connection removed.';
   await loadProviders();
-});
+}));
 
 if (captureAuthCallback()) loadProfile();
