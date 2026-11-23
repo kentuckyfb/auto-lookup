@@ -65,7 +65,7 @@ let selectedVehicle = null;
 const normalize = value => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const vehicleKey = ({ year, make, model, trim }) => JSON.stringify([year, normalize(make), normalize(model), (trim || '').toLowerCase()]);
 const vehicleTitle = ({ year, label, trim }) => `${year} ${label}${trim ? ` · ${trim}` : ''}`;
-const vehicleRecord = ({ year, make, model, type, label, trim = '' }) => ({ year, make, model, type, label, trim });
+const vehicleRecord = ({ year, make, model, type, label, trim = '' }, diagnosis = null) => ({ year, make, model, type, label, trim, ...(diagnosis ? { diagnosis } : {}) });
 
 const latestYear = Math.max(new Date().getFullYear() + 1, ...[...recentSearches, ...savedVehicles].map(vehicle => Number(vehicle.year)));
 const modelYears = [];
@@ -108,7 +108,14 @@ function renderSavedVehicles() {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'saved-vehicle-open';
-    open.textContent = vehicleTitle(vehicle);
+    const savedTitle = document.createElement('span');
+    savedTitle.textContent = vehicleTitle(vehicle);
+    open.appendChild(savedTitle);
+    if (vehicle.diagnosis) {
+      const savedMeta = document.createElement('small');
+      savedMeta.textContent = 'Diagnosis saved';
+      open.appendChild(savedMeta);
+    }
     open.addEventListener('click', () => chooseVehicle(vehicle));
 
     const remove = document.createElement('button');
@@ -551,6 +558,14 @@ function openVehicle(vehicle) {
   renderVehiclePhoto(vehicle);
   loadKnownIssues(vehicle);
   showOnly('#car-view');
+  resetDiagnosisView();
+  if (vehicle.diagnosis) {
+    currentDiagnosis = vehicle.diagnosis;
+    $('#user-message').textContent = vehicle.diagnosis.symptom || 'Saved diagnosis';
+    $('#diagnosis-intro').classList.add('hidden');
+    $('#chat-panel').classList.remove('hidden');
+    renderDiagnosisResult(vehicle.diagnosis);
+  }
 }
 
 let catalogTimer;
@@ -599,7 +614,7 @@ renderSavedVehicles();
 $('#save-vehicle').addEventListener('click', () => {
   if (!selectedVehicle) return;
   if (isVehicleSaved(selectedVehicle)) removeSavedVehicle(selectedVehicle);
-  else storeSavedVehicles([vehicleRecord(selectedVehicle), ...savedVehicles]);
+  else storeSavedVehicles([vehicleRecord(selectedVehicle, currentDiagnosis), ...savedVehicles]);
 });
 
 window.addEventListener('storage', event => {
@@ -672,6 +687,7 @@ $$('.examples button').forEach(button => button.addEventListener('click', () => 
 
 let diagnosisHistory = [];
 let diagnosisQuestionId = '';
+let currentDiagnosis = null;
 
 function fillList(selector, items) {
   const list = $(selector);
@@ -683,17 +699,33 @@ function fillList(selector, items) {
   });
 }
 
+function setHighlightedText(element, text, terms) {
+  element.replaceChildren();
+  const cleanTerms = [...new Set(terms.map(term => String(term || '').trim()).filter(term => term.length > 3))]
+    .sort((a, b) => b.length - a.length);
+  if (!cleanTerms.length) { element.textContent = text; return; }
+  const pattern = new RegExp(`(${cleanTerms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  String(text || '').split(pattern).filter(Boolean).forEach(part => {
+    if (cleanTerms.some(term => term.toLowerCase() === part.toLowerCase())) {
+      const strong = document.createElement('strong');
+      strong.textContent = part;
+      element.appendChild(strong);
+    } else element.appendChild(document.createTextNode(part));
+  });
+}
+
 function renderDiagnosisResult(diagnosis) {
   $('#follow-up').classList.add('hidden');
   $('#custom-answer').classList.add('hidden');
   $('#choices').innerHTML = '';
   $('#result-title').textContent = diagnosis.title;
-  $('#result-explanation').textContent = diagnosis.explanation;
+  const highlightTerms = [...(diagnosis.parts || []), ...(diagnosis.likelyProblems || []).map(item => item.name)];
+  setHighlightedText($('#result-explanation'), diagnosis.explanation, highlightTerms);
   fillList('#result-parts', (diagnosis.parts || []).slice(0, 4));
   fillList('#result-checks', (diagnosis.checks || []).slice(0, 3));
   $('#result-action').textContent = diagnosis.action;
   $('#result-urgency').textContent = diagnosis.urgency;
-  $('#result-urgency').dataset.level = String(diagnosis.urgency || 'low').toLowerCase().replace(/\s+/g, '-');
+  $('#result-urgency').closest('.urgency-pill').dataset.level = String(diagnosis.urgency || 'low').toLowerCase().replace(/\s+/g, '-');
   $('#result-timeframe').textContent = diagnosis.timeframe || 'Ask the garage after inspection';
   $('#result-replacement').textContent = diagnosis.replacementAdvice || 'Only after testing confirms failure';
   const causes = $('#result-causes');
@@ -711,6 +743,12 @@ function renderDiagnosisResult(diagnosis) {
   });
   $('#result .garage-note p').textContent = `“${diagnosis.garageQuestion}”`;
   $('#result-safety').textContent = diagnosis.safety;
+  currentDiagnosis = { ...diagnosis, symptom: $('#user-message').textContent };
+  if (selectedVehicle && isVehicleSaved(selectedVehicle)) {
+    storeSavedVehicles(savedVehicles.map(vehicle => vehicleKey(vehicle) === vehicleKey(selectedVehicle)
+      ? vehicleRecord(selectedVehicle, currentDiagnosis)
+      : vehicle));
+  }
   $('#result').classList.remove('hidden');
 }
 
@@ -786,16 +824,19 @@ $('#custom-answer').addEventListener('submit', event => {
   requestDiagnosis({ id: 'custom', label });
 });
 
-$('#restart-diagnosis').addEventListener('click', () => {
+function resetDiagnosisView(focus = false) {
   diagnosisHistory = [];
   diagnosisQuestionId = '';
+  currentDiagnosis = null;
   $('#problem-input').value = '';
   $('#chat-panel').classList.add('hidden');
   $('#diagnosis-intro').classList.remove('hidden');
   $('#result').classList.add('hidden');
   $('#custom-answer').classList.add('hidden');
-  $('#problem-input').focus();
-});
+  if (focus) $('#problem-input').focus();
+}
+
+$('#restart-diagnosis').addEventListener('click', () => resetDiagnosisView(true));
 
 const authStore = {
   token: localStorage.getItem('auto_lookup_access_token'),
