@@ -1,7 +1,16 @@
 const { json } = require('./_lib/data');
 
 const clean = (value, max = 500) => String(value || '').trim().slice(0, max);
-const model = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const model = () => process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+
+class GeminiError extends Error {
+  constructor(response, body) {
+    super(body?.error?.message || `Gemini request failed (${response.status})`);
+    this.httpStatus = response.status;
+    this.apiStatus = body?.error?.status || 'UNKNOWN';
+    this.reason = body?.error?.details?.find(detail => detail?.reason)?.reason || '';
+  }
+}
 
 const plannerSchema = {
   type: 'OBJECT', required: ['stage', 'questionId', 'question', 'choices', 'searchQuery'],
@@ -54,7 +63,7 @@ async function gemini(key, { prompt, schema, search = false, temperature = 0.2 }
     signal: AbortSignal.timeout(30000)
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error?.message || `Gemini request failed (${response.status})`);
+  if (!response.ok) throw new GeminiError(response, body);
   return { body, text: textFromGemini(body) };
 }
 
@@ -105,8 +114,15 @@ ${vehicleContext(vehicle, problem, history)}
 
 Suggested query: ${searchQuery || `${vehicle.year} ${vehicle.make} ${vehicle.model} ${problem}`}
 
-Use Google Search. Prefer manufacturer/service information, government safety records, reputable technical references, and repeated model-specific owner reports. Clearly distinguish recalls from general symptom evidence. Owner reports are patterns, not proof. Do not claim that one part has failed. Summarize plausible causes, affected parts, diagnostic checks, repair versus replacement considerations, urgency, safety, and time-to-action guidance. Mention conflicts or weak model-specific evidence.`;
-  return gemini(key, { prompt, search: true, temperature: 0.15 });
+Prefer manufacturer/service information, government safety records, reputable technical references, and repeated model-specific owner reports where your available knowledge supports them. Clearly distinguish recalls from general symptom evidence. Owner reports are patterns, not proof. Do not claim that one part has failed. Summarize plausible causes, affected parts, diagnostic checks, repair versus replacement considerations, urgency, safety, and time-to-action guidance. Mention conflicts or weak model-specific evidence.`;
+  if (process.env.GEMINI_SEARCH_GROUNDING === '1') {
+    try { return await gemini(key, { prompt: `Use Google Search.\n\n${prompt}`, search: true, temperature: 0.15 }); }
+    catch (error) {
+      if (![400, 403, 404, 429].includes(error.httpStatus)) throw error;
+      console.warn(`Gemini Search grounding unavailable (${error.apiStatus}); continuing without it.`);
+    }
+  }
+  return gemini(key, { prompt: `Do not claim to have searched the live web.\n\n${prompt}`, temperature: 0.15 });
 }
 
 async function structuredResult(key, vehicle, problem, history, evidence) {
@@ -167,7 +183,18 @@ module.exports = async function handler(req, res) {
       garageQuestion: result.garageQuestion, safety, limitations: result.limitations, sources: sourcesFromGemini(grounded.body)
     } });
   } catch (error) {
-    console.error('Gemini diagnosis failed:', error.message);
-    return json(res, 502, { error: 'AI diagnosis is temporarily unavailable. Please try again.' });
+    console.error(`Gemini diagnosis failed [${error.apiStatus || 'LOCAL'}]:`, error.message);
+    const safeMessage = error.httpStatus === 401
+      ? 'The Gemini key was not accepted. Re-copy it from Google AI Studio without quotes or spaces.'
+      : error.httpStatus === 403
+        ? 'This Gemini key does not have permission to generate responses.'
+        : error.httpStatus === 404
+          ? `The configured Gemini model (${model()}) is unavailable for this project.`
+          : error.httpStatus === 429
+            ? 'The free Gemini request limit has been reached. Please try again later.'
+            : error.httpStatus === 400
+              ? 'Gemini rejected the diagnosis request format.'
+              : 'AI diagnosis is temporarily unavailable. Please try again.';
+    return json(res, 502, { error: safeMessage, code: `GEMINI_${error.apiStatus || 'ERROR'}` });
   }
 };

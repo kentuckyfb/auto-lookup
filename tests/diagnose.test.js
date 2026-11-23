@@ -66,7 +66,7 @@ function invoke(body) {
   assert.equal(result.body.diagnosis.timeframe, 'Within a few days');
   assert.equal(result.body.diagnosis.sources[0].url, 'https://example.com/reference');
   assert.equal(posted.length, 2);
-  assert.deepEqual(posted[0].body.tools, [{ google_search: {} }]);
+  assert.equal(posted[0].body.tools, undefined);
   assert.equal(posted[1].body.generationConfig.responseMimeType, 'application/json');
   console.log('Gemini diagnosis flow test passed');
 })().catch(error => {
