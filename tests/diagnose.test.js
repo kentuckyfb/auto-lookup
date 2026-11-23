@@ -6,7 +6,9 @@ const posted = [];
 const responses = [];
 global.fetch = async (url, options) => {
   posted.push({ url, headers: options.headers, body: JSON.parse(options.body) });
-  return { ok: true, json: async () => responses.shift() };
+  const next = responses.shift();
+  if (next?.__error) return { ok: false, status: next.status, json: async () => ({ error: next.error }) };
+  return { ok: true, status: 200, json: async () => next };
 };
 
 const interaction = value => ({
@@ -46,7 +48,7 @@ function invoke(body) {
   assert.equal(question.body.questionId, 'noise_location');
   assert.equal(posted[0].url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
   assert.equal(posted[0].headers['x-goog-api-key'], 'test-only');
-  assert.equal(posted[0].body.model, 'gemini-3.8-flash');
+  assert.equal(posted[0].body.model, 'gemini-3.5-flash-lite');
   assert.equal(posted[0].body.store, false);
   assert.equal(posted[0].body.response_format.mime_type, 'application/json');
   assert.equal(posted[0].body.response_format.schema.type, 'object');
@@ -72,6 +74,18 @@ function invoke(body) {
   assert.equal(result.body.diagnosis.timeframe, 'Within a few days');
   assert.equal(result.body.diagnosis.sources.length, 0);
   assert.equal(posted.length, 1);
+
+  posted.length = 0;
+  responses.push(
+    { __error: true, status: 503, error: { status: 'service_unavailable', message: 'High demand' } },
+    interaction({ stage: 'question', questionId: 'ac_conditions', question: 'When does the A/C blow warm?', choices: [{ id: 'always', label: 'All the time' }, { id: 'idle', label: 'Mostly at idle' }], diagnosis: emptyDiagnosis })
+  );
+  const fallback = await invoke({ year: '2021', make: 'Suzuki', model: 'Alto', problem: 'A/C blows warm air', history: [] });
+  assert.equal(fallback.status, 200);
+  assert.equal(fallback.body.stage, 'question');
+  assert.equal(posted.length, 2);
+  assert.equal(posted[0].body.model, 'gemini-3.5-flash-lite');
+  assert.equal(posted[1].body.model, 'gemini-3.8-flash');
   console.log('Gemini Interactions contract test passed');
 })().catch(error => {
   console.error(error);

@@ -66,7 +66,7 @@ The cache stores image references and source metadata. The Wagon R reference pho
 4. Add the project secrets in Vercel.
    - `CARSXE_API_KEY`
    - `GEMINI_API_KEY`
-   - `GEMINI_MODEL` (optional, defaults to `gemini-3.8-flash`)
+   - `GEMINI_MODEL` (optional, defaults to `gemini-3.5-flash-lite`; temporary model outages fall back automatically)
 5. Confirm the Supabase integration added `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`.
 6. Open **Authentication → URL Configuration** in Supabase and configure the site and redirect URLs.
    - Set **Site URL** to the production Vercel URL, for example `https://auto-lookup.vercel.app`.

@@ -1,7 +1,8 @@
 const { json } = require('./_lib/data');
 
 const clean = (value, max = 500) => String(value || '').trim().slice(0, max);
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+const MODELS = [...new Set([PRIMARY_MODEL, 'gemini-3.5-flash-lite', 'gemini-3.8-flash'])];
 
 const emptyDiagnosis = {
   title: '', explanation: '', likelyProblems: [], affectedParts: [], checks: [],
@@ -91,12 +92,12 @@ Return exactly one of these:
 Use stage "result" immediately for urgent safety symptoms. Keep every field concise and readable. This is guidance, not a confirmed diagnosis.`;
 }
 
-async function askGemini(key, context) {
+async function askGemini(key, context, model) {
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
     method: 'POST',
     headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       input: promptFor(context.vehicle, context.problem, context.history),
       store: false,
       response_format: { type: 'text', mime_type: 'application/json', schema: responseSchema }
@@ -127,7 +128,7 @@ function validDiagnosis(result) {
 function safeError(error) {
   if (error.httpStatus === 401) return 'The Gemini key was rejected. Re-copy it from Google AI Studio without quotes or spaces.';
   if (error.httpStatus === 403) return 'The Gemini key does not have permission to generate responses.';
-  if (error.httpStatus === 404) return `Gemini model ${MODEL} is unavailable for this project.`;
+  if (error.httpStatus === 404) return `The configured Gemini models are unavailable for this project.`;
   if (error.httpStatus === 429) return 'The free Gemini request limit has been reached. Please try again later.';
   if (error.httpStatus === 400) return `Gemini rejected the request: ${clean(error.message, 180)}`;
   if (error instanceof SyntaxError) return 'Gemini returned an invalid response. Please try once more.';
@@ -150,7 +151,20 @@ module.exports = async function handler(req, res) {
   if (!process.env.GEMINI_API_KEY) return json(res, 503, { error: 'Gemini is not configured on this deployment.' });
 
   try {
-    const result = await askGemini(process.env.GEMINI_API_KEY.trim(), { vehicle, problem, history });
+    let result;
+    let lastError;
+    for (const model of MODELS) {
+      try {
+        result = await askGemini(process.env.GEMINI_API_KEY.trim(), { vehicle, problem, history }, model);
+        break;
+      } catch (error) {
+        lastError = error;
+        const retryable = error.httpStatus === 503 || error.httpStatus === 404 || String(error.apiStatus).toLowerCase() === 'service_unavailable';
+        if (!retryable) throw error;
+        console.warn(`Gemini model ${model} unavailable; trying fallback.`);
+      }
+    }
+    if (!result) throw lastError || new Error('No Gemini model was available.');
     if (result.stage === 'question' && validQuestion(result, history) && history.length < 4) {
       return json(res, 200, {
         stage: 'question', questionId: clean(result.questionId, 80), question: clean(result.question, 300),
