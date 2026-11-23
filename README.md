@@ -67,7 +67,6 @@ The cache stores image references and source metadata. The Wagon R reference pho
    - `CARSXE_API_KEY`
    - `GEMINI_API_KEY`
    - `GEMINI_MODEL` (optional, defaults to `gemini-3.8-flash`)
-   - `GEMINI_SEARCH_GROUNDING` (optional; set to `1` only when Search grounding is available for the project)
 5. Confirm the Supabase integration added `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`.
 6. Open **Authentication → URL Configuration** in Supabase and configure the site and redirect URLs.
    - Set **Site URL** to the production Vercel URL, for example `https://auto-lookup.vercel.app`.
@@ -79,4 +78,4 @@ The browser handles Supabase's confirmation fragment, stores the session, remove
 
 CarsXE and Gemini use server-side Vercel environment variables; API keys are never sent to the browser. Vehicle data is read from the Supabase cache first, so a cached lookup does not spend another CarsXE credit until it expires.
 
-Guided diagnosis sends the selected year, make, model, original symptom, and prior answers to Gemini. Gemini asks up to four distinct observable questions and converts its assessment into a strict JSON format for consistent display. Optional Google Search grounding can be enabled separately when the Gemini project supports it. Results include likely causes, affected parts, checks, repair-versus-replacement guidance, timeframe, urgency, and safety advice.
+Guided diagnosis sends the selected year, make, model, original symptom, and prior answers to Gemini's Interactions API. Gemini asks up to four distinct observable questions and returns a strict JSON response for consistent display. Results include likely causes, affected parts, checks, repair-versus-replacement guidance, timeframe, urgency, and safety advice.
